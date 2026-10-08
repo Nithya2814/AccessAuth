@@ -14,23 +14,34 @@ import {
   Eye, 
   Crosshair, 
   Volume2, 
-  ShieldCheck,
-  Zap,
-  Palette
+  ShieldCheck, 
+  Zap, 
+  Palette, 
+  Radio
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { adaptiveEngine } from '../services/adaptiveEngine';
 import { audioEngine } from '../services/audioEngine';
 import { speechService } from '../services/speechService';
 
+export interface TelemetryMetrics {
+  currentMode: string;
+  mouseDisplacement: number;
+  tabCount: number;
+  typingDelayMs: number;
+  captchaFails: number;
+  displayScale: number;
+}
+
 interface UnifiedLoginProps {
   onSuccess: (method: string, user: string) => void;
+  onTelemetryUpdate?: (metrics: TelemetryMetrics) => void;
 }
 
 type AdaptiveMode = 'normal' | 'blind' | 'low-vision' | 'dyslexia' | 'iris';
 
-export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
-  // Current Mode: Starts at 100% Normal Baseline. Transforms purely on user behavior!
+export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess, onTelemetryUpdate }) => {
+  // Current Adaptive State: Starts at 100% Normal Baseline. Transforms purely on user behavior!
   const [currentMode, setCurrentMode] = useState<AdaptiveMode>('normal');
   const [behavioralNotice, setBehavioralNotice] = useState<string | null>(null);
 
@@ -51,10 +62,12 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
 
   // 3. Typing Hesitation & Enhanced Color Keyboard Assist
   const [showColorKeyboard, setShowColorKeyboard] = useState<boolean>(false);
+  const [typingDelayMs, setTypingDelayMs] = useState<number>(0);
+  const lastKeyTimeRef = useRef<number>(Date.now());
   const typingTimerRef = useRef<number | null>(null);
 
   // 4. Low-Vision 150% Font State
-  const [is150Font, setIs150Font] = useState<boolean>(false);
+  const [fontScalePercent, setFontScalePercent] = useState<number>(100);
 
   // 5. Iris Candidate State
   const [irisCandidate, setIrisCandidate] = useState<'Nithya' | 'Aishu'>('Nithya');
@@ -63,22 +76,49 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
 
   // Behavioral Telemetry Tracking Refs
   const mouseMovedRef = useRef<boolean>(false);
+  const mouseDistanceRef = useRef<number>(0);
+  const tabCounterRef = useRef<number>(0);
+
+  // Helper to publish live metrics
+  const broadcastMetrics = (mode: string = currentMode) => {
+    if (onTelemetryUpdate) {
+      onTelemetryUpdate({
+        currentMode: mode,
+        mouseDisplacement: mouseDistanceRef.current,
+        tabCount: tabCounterRef.current,
+        typingDelayMs,
+        captchaFails,
+        displayScale: +(fontScalePercent / 100).toFixed(2)
+      });
+    }
+  };
 
   // -------------------------------------------------------------------------
   // BEHAVIORAL AUTO-DETECTION ENGINE (Passively listens in background)
   // -------------------------------------------------------------------------
   useEffect(() => {
-    // 1. Mouse movement: If user moves mouse, they are using a standard visual pointer
+    // 1. Mouse movement: Tracking cursor displacement
     const handleMouseMove = () => {
       mouseMovedRef.current = true;
+      mouseDistanceRef.current += 1;
+      broadcastMetrics();
     };
 
     // 2. Keyboard Navigation: Blind person navigates via Tab key without mouse movement
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Calculate typing pause duration
+      const now = Date.now();
+      const delta = now - lastKeyTimeRef.current;
+      lastKeyTimeRef.current = now;
+      setTypingDelayMs(delta);
+
       if (currentMode !== 'normal') return;
 
       // BEHAVIOR A: User presses Tab without moving mouse -> BLIND / Screen-Reader User
       if (e.key === 'Tab') {
+        tabCounterRef.current += 1;
+        broadcastMetrics();
+
         if (!mouseMovedRef.current) {
           triggerBehavioralSwitch(
             'blind',
@@ -91,7 +131,7 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
     // 3. Display Scale / Zoom: Low-Blind / Low-Vision user font size >= 150%
     const handleResize = () => {
       if (typeof window !== 'undefined' && window.devicePixelRatio >= 1.4) {
-        setIs150Font(true);
+        setFontScalePercent(150);
         if (currentMode === 'normal') {
           triggerBehavioralSwitch(
             'low-vision',
@@ -107,7 +147,7 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
 
     // Initial check on mount
     if (typeof window !== 'undefined' && window.devicePixelRatio >= 1.4) {
-      setIs150Font(true);
+      setFontScalePercent(150);
       if (currentMode === 'normal') {
         triggerBehavioralSwitch(
           'low-vision',
@@ -121,7 +161,7 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('resize', handleResize);
     };
-  }, [currentMode]);
+  }, [currentMode, fontScalePercent]);
 
   // Typing Hesitation Tracker: If user pauses typing > 4 seconds, show Enhanced Color Keyboard!
   const handleTypingActivity = () => {
@@ -146,6 +186,7 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
     setBehavioralNotice(notice);
     setStatus('idle');
     setErrorMessage('');
+    broadcastMetrics(mode);
 
     if (mode === 'blind') {
       triggerVibration();
@@ -166,9 +207,13 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
     setBehavioralNotice(null);
     setShowColorKeyboard(false);
     mouseMovedRef.current = false;
+    mouseDistanceRef.current = 0;
+    tabCounterRef.current = 0;
     setCaptchaFails(0);
+    setFontScalePercent(100);
     setStatus('idle');
     setErrorMessage('');
+    broadcastMetrics('normal');
     speechService.speak("Reset to standard login form.");
   };
 
@@ -202,6 +247,7 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
       audioEngine.playError();
       setStatus('error');
       setErrorMessage(`Incorrect security CAPTCHA. (Attempt ${next}/3)`);
+      broadcastMetrics();
 
       // POINT 3: If user fails CAPTCHA 3 times, activate Dyslexia Symbol CAPTCHA!
       if (next >= 3) {
@@ -254,9 +300,10 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
   const handleColorKeyTap = (char: string) => {
     audioEngine.playClick();
     setUserCaptcha(prev => prev + char);
+    handleTypingActivity();
   };
 
-  // Handle Iris Scan
+  // Handle Iris Scan with simulated Ocular Landmark Mesh
   const handleRunIris = () => {
     audioEngine.playClick();
     setIsScanning(true);
@@ -294,11 +341,11 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
   };
 
   return (
-    <div className="w-full flex flex-col items-center justify-center py-4 px-2 sm:px-4">
+    <div className="w-full flex flex-col items-center justify-center">
 
       {/* Pristine Real Login Card (Zero Tabs, 100% Behavioral Intelligence) */}
-      <div className={`w-full max-w-md card-glass rounded-3xl p-6 sm:p-8 border relative transition-all ${
-        is150Font ? 'scale-150-container' : ''
+      <div className={`w-full card-glass rounded-3xl p-6 sm:p-8 border relative transition-all ${
+        fontScalePercent === 150 ? 'scale-150-container' : 'max-w-md'
       } bg-white/95 border-white shadow-2xl`}>
 
         {/* Behavioral Notice Banner (Only shows when system automatically adapts on behavior!) */}
@@ -322,7 +369,7 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
           </div>
         )}
 
-        {/* Brand Header */}
+        {/* Brand Header with Accessibility Scaler */}
         <div className="flex items-center justify-between pb-4 mb-5 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 to-cyan-400 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
@@ -334,6 +381,32 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
               </h1>
               <p className="text-[11px] text-slate-500 font-medium">Adaptive Identity Gateway</p>
             </div>
+          </div>
+
+          {/* Quick Font Scaler for Low-Vision Testing */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-[10px] font-mono">
+            <button
+              type="button"
+              onClick={() => {
+                setFontScalePercent(100);
+                if (currentMode === 'low-vision') resetToNormal();
+              }}
+              className={`px-2 py-0.5 rounded-lg transition-all ${fontScalePercent === 100 ? 'bg-white font-bold text-indigo-600 shadow-sm' : 'text-slate-500'}`}
+              title="Standard 100% Scale"
+            >
+              100%
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFontScalePercent(150);
+                triggerBehavioralSwitch('low-vision', 'Manual scale set to 150% font magnification.');
+              }}
+              className={`px-2 py-0.5 rounded-lg transition-all ${fontScalePercent === 150 ? 'bg-amber-400 font-bold text-slate-950 shadow-sm' : 'text-slate-500'}`}
+              title="Low-Vision 150% Scale"
+            >
+              150%
+            </button>
           </div>
         </div>
 
@@ -350,6 +423,11 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
               <p className="text-slate-700 text-[11px] leading-relaxed">
                 "Welcome Nithya. Screen reader detected. No visual typing required. Click the button below to feel the random vibration pulses on your physical device."
               </p>
+              {/* Audio Waveform Animation */}
+              <div className="flex items-center gap-1 mt-2.5 text-cyan-600 font-mono text-[10px]">
+                <Radio className="w-3.5 h-3.5 animate-pulse" />
+                <span>Binaural Audio Channel Ready</span>
+              </div>
             </div>
 
             {/* Random Vibration Pulses Box */}
@@ -448,19 +526,28 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
               </button>
             </div>
 
-            {/* Moving Dot Liveness Box */}
-            <div className="relative h-40 rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden flex items-center justify-center">
+            {/* High-Tech Moving Dot Liveness Box with Iris Reticle */}
+            <div className="relative h-44 rounded-2xl bg-slate-950 border border-slate-800 overflow-hidden flex items-center justify-center">
+              {/* Ocular Tracking Grid Lines */}
+              <div className="absolute inset-0 bg-[radial-gradient(#334155_1px,transparent_1px)] [background-size:16px_16px] opacity-30" />
+
               <div
                 style={{ top: `${gazeDotPos.y}%`, left: `${gazeDotPos.x}%` }}
-                className="absolute w-5 h-5 rounded-full bg-cyan-400 shadow-[0_0_20px_#22d3ee] -translate-x-1/2 -translate-y-1/2 transition-all duration-700 flex items-center justify-center"
+                className="absolute w-6 h-6 rounded-full bg-cyan-400 shadow-[0_0_25px_#22d3ee] -translate-x-1/2 -translate-y-1/2 transition-all duration-700 flex items-center justify-center z-20"
               >
-                <Crosshair className="w-3 h-3 text-slate-950" />
+                <Crosshair className="w-4 h-4 text-slate-950" />
               </div>
 
               <div className="text-center z-10 p-2">
-                <Eye className="w-8 h-8 text-purple-400 mx-auto mb-1 animate-pulse" />
-                <p className="text-xs font-mono text-white">
+                <div className="relative inline-block mb-1">
+                  <Eye className="w-9 h-9 text-purple-400 mx-auto animate-pulse" />
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400" />
+                </div>
+                <p className="text-xs font-mono text-white font-semibold">
                   {isScanning ? "Tracking ocular saccades..." : `Ready to scan ${irisCandidate}.`}
+                </p>
+                <p className="text-[10px] font-mono text-cyan-300 mt-0.5">
+                  IPD Target: 0.28 mm · Liveness Dot Active
                 </p>
               </div>
             </div>
@@ -555,7 +642,7 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
                   })}
                 </div>
               </div>
-            ) : is150Font ? (
+            ) : fontScalePercent === 150 ? (
               /* -------------------------------------------------------------------
                   LOW-VISION / LOW-BLIND: 150% Font Scaled CAPTCHA with Audio Readout!
                   ------------------------------------------------------------------- */
@@ -611,7 +698,7 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
                     type="button"
                     onClick={() => {
                       audioEngine.playClick();
-                      setTextCaptcha(prev => prev === 'MWPQ' ? 'BDPQ' : 'MWPQ');
+                      setTextCaptcha(prev => prev === 'MWPQ' ? 'BDPQ' : prev === 'BDPQ' ? 'QOPD' : 'MWPQ');
                     }}
                     className="p-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 transition-colors"
                   >
