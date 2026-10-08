@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   User, 
   Lock, 
@@ -14,12 +14,13 @@ import {
   Eye, 
   Crosshair, 
   Volume2, 
-  Sun, 
-  Moon,
   ShieldCheck,
   ShieldAlert,
   FileCode2,
-  Users
+  Users,
+  Activity,
+  RotateCcw,
+  Zap
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { adaptiveEngine } from '../services/adaptiveEngine';
@@ -33,17 +34,17 @@ interface UnifiedLoginProps {
   onOpenGuardian: () => void;
 }
 
+type AdaptiveMode = 'normal' | 'blind' | 'low-vision' | 'dyslexia' | 'iris';
+
 export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({
   onSuccess,
   onOpenAttackerSim,
   onOpenArchitecture,
   onOpenGuardian
 }) => {
-  // Master Adaptive States (One single form, zero tabs!)
-  const [isBlindMode, setIsBlindMode] = useState<boolean>(false);
-  const [isLowVisionMode, setIsLowVisionMode] = useState<boolean>(false);
-  const [isDyslexiaMode, setIsDyslexiaMode] = useState<boolean>(false);
-  const [isIrisMode, setIsIrisMode] = useState<boolean>(false);
+  // Current Adaptive State (No tabs! Adapted purely on the fly by telemetry)
+  const [currentMode, setCurrentMode] = useState<AdaptiveMode>('normal');
+  const [telemetryReason, setTelemetryReason] = useState<string | null>(null);
 
   // Form Fields
   const [username, setUsername] = useState<string>('nithya@accessauth.org');
@@ -72,36 +73,108 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({
   const [gazeDotPos, setGazeDotPos] = useState<{ x: number; y: number }>({ x: 50, y: 50 });
   const [isScanning, setIsScanning] = useState<boolean>(false);
 
-  // Voice toggle
-  const voiceEnabled: boolean = true;
+  // Behavioral Telemetry Counters
+  const tabCounter = useRef<number>(0);
+  const backspaceCounter = useRef<number>(0);
+  const mouseMoved = useRef<boolean>(false);
 
-  // Auto-detect Low-Vision Display Zoom on mount
+  // -------------------------------------------------------------------------
+  // BEHAVIORAL AUTO-DETECTION ENGINE (Runs in Background)
+  // -------------------------------------------------------------------------
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.devicePixelRatio > 1.3) {
-      setIsLowVisionMode(true);
-      setKeypadOrder([...[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].sort(() => Math.random() - 0.5)]);
-    }
-  }, []);
+    // 1. Mouse Movement Tracker (Used to detect pure keyboard screen-reader navigation)
+    const handleMouseMove = () => {
+      mouseMoved.current = true;
+    };
 
-  // 1. BLIND MODE TRIGGER (User clicks Voice Assistant OR uses Screen Reader)
-  const toggleBlindMode = () => {
+    // 2. Keyboard Telemetry Listener
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // BEHAVIOR A: Pure Tab Navigation (Blind / Screen-Reader Detection)
+      if (e.key === 'Tab') {
+        tabCounter.current += 1;
+        // If user presses Tab twice without mouse movement -> Trigger Blind Mode!
+        if (tabCounter.current >= 2 && !mouseMoved.current && currentMode === 'normal') {
+          triggerBehavioralAdaptation(
+            'blind',
+            'Pure Tab keyboard navigation detected (0px mouse movement). Screen-reader pattern recognized.'
+          );
+        }
+      }
+
+      // BEHAVIOR B: Repeated Backspaces (Cognitive Struggle / Dyslexia Detection)
+      if (e.key === 'Backspace') {
+        backspaceCounter.current += 1;
+        if (backspaceCounter.current >= 3 && currentMode === 'normal') {
+          triggerBehavioralAdaptation(
+            'dyslexia',
+            'High backspace friction detected (3+ corrections). Cognitive typo struggle recognized.'
+          );
+        }
+      }
+    };
+
+    // 3. Display Scale / Zoom Telemetry Listener
+    const handleResize = () => {
+      if (typeof window !== 'undefined' && window.devicePixelRatio > 1.3 && currentMode === 'normal') {
+        triggerBehavioralAdaptation(
+          'low-vision',
+          `High display zoom detected (devicePixelRatio: ${window.devicePixelRatio.toFixed(1)}). Protecting against shoulder-surfing.`
+        );
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', handleResize);
+
+    // Initial check on mount
+    if (typeof window !== 'undefined' && window.devicePixelRatio > 1.3 && currentMode === 'normal') {
+      triggerBehavioralAdaptation(
+        'low-vision',
+        `High display magnification active (${window.devicePixelRatio.toFixed(1)}x zoom). Activating Decoy Shield.`
+      );
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [currentMode]);
+
+  // Master Behavioral Adaptor Function
+  const triggerBehavioralAdaptation = (mode: AdaptiveMode, reason: string) => {
     audioEngine.playClick();
-    const next = !isBlindMode;
-    setIsBlindMode(next);
-    setIsIrisMode(false);
+    setCurrentMode(mode);
+    setTelemetryReason(reason);
     setStatus('idle');
     setErrorMessage('');
 
-    if (next) {
+    if (mode === 'blind') {
       triggerVibration();
-      if (voiceEnabled) {
-        speechService.speak("Screen reader assistant enabled. Blind Accessible Mode active. You will feel random vibration pulses to verify presence.");
-      }
-    } else {
-      if (voiceEnabled) {
-        speechService.speak("Switched back to standard login mode.");
-      }
+      speechService.speak("Screen reader navigation detected. Adapting interface to Voice and Hardware Vibration mode.");
+    } else if (mode === 'dyslexia') {
+      speechService.speak("Typing difficulty detected. Simplifying verification to a Golden Star shape stamp.");
+    } else if (mode === 'low-vision') {
+      setKeypadOrder([...[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].sort(() => Math.random() - 0.5)]);
+      speechService.speak("Display zoom detected. Scrambled Decoy Keypad enabled to prevent shoulder surfing.");
+    } else if (mode === 'iris') {
+      speechService.speak("Hands-Free Eye mode active. Ready for ocular biometric challenge.");
     }
+  };
+
+  // Reset back to Normal Baseline
+  const resetToBaseline = () => {
+    audioEngine.playClick();
+    setCurrentMode('normal');
+    setTelemetryReason(null);
+    tabCounter.current = 0;
+    backspaceCounter.current = 0;
+    mouseMoved.current = false;
+    setFailCount(0);
+    setStatus('idle');
+    setErrorMessage('');
+    speechService.speak("Reset to standard baseline login form.");
   };
 
   // Trigger Random Vibration Pulses
@@ -123,7 +196,7 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({
     }, ch.pulseCount * 320 + 200);
   };
 
-  // Handle Normal Submit & Auto-Adapt to Dyslexia
+  // Handle Normal Submit & Auto-Adapt to Dyslexia on 2x failure
   const handleNormalSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     audioEngine.playClick();
@@ -138,12 +211,10 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({
       // AUTO-ADAPT: If user fails CAPTCHA 2 times, switch right here on this same form!
       if (next >= 2) {
         setTimeout(() => {
-          setIsDyslexiaMode(true);
-          setStatus('idle');
-          setErrorMessage('');
-          if (voiceEnabled) {
-            speechService.speak("Multiple CAPTCHA difficulties detected. We have simplified the verification to a Golden Star shape stamp for you.");
-          }
+          triggerBehavioralAdaptation(
+            'dyslexia',
+            'Text CAPTCHA failed twice (Confidence: 94% visual/dyslexic friction). Distorted letters removed.'
+          );
         }, 600);
       }
       return;
@@ -221,9 +292,7 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({
     setStatus('success');
     audioEngine.playSuccess();
     confetti({ particleCount: 90, spread: 75, origin: { y: 0.6 } });
-    if (voiceEnabled) {
-      speechService.speak(`Authentication successful via ${method}. Welcome, ${user}.`);
-    }
+    speechService.speak(`Authentication successful via ${method}. Welcome, ${user}.`);
     setTimeout(() => {
       onSuccess(method, user);
     }, 1000);
@@ -232,14 +301,40 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({
   return (
     <div className="w-full flex flex-col items-center justify-center py-4 px-2 sm:px-4">
 
-      {/* World-Class Modern Login Card */}
+      {/* Real-World Adaptive Login Card (Zero Tabs!) */}
       <div className={`w-full max-w-md card-glass rounded-3xl p-6 sm:p-8 border relative transition-all ${
-        isLowVisionMode 
+        currentMode === 'low-vision'
           ? 'low-vision-tactile' 
           : 'bg-white/95 border-white shadow-2xl'
       }`}>
 
-        {/* Card Header & Assist Controls */}
+        {/* Live Behavioral Telemetry Status Pill */}
+        <div className={`mb-5 p-2.5 rounded-2xl border text-xs flex items-center justify-between transition-all ${
+          telemetryReason
+            ? 'bg-indigo-50 border-indigo-200 text-indigo-900 shadow-sm'
+            : 'bg-slate-50 border-slate-200 text-slate-600'
+        }`}>
+          <div className="flex items-center gap-2 overflow-hidden">
+            <Activity className={`w-4 h-4 shrink-0 ${telemetryReason ? 'text-indigo-600 animate-pulse' : 'text-emerald-500'}`} />
+            <span className="truncate font-medium text-[11px]">
+              {telemetryReason ? (
+                <span><strong>Behavior Detected:</strong> {telemetryReason}</span>
+              ) : (
+                <span><strong>Telemetry Engine:</strong> Monitoring keystrokes, zoom & navigation...</span>
+              )}
+            </span>
+          </div>
+          {telemetryReason && (
+            <button
+              onClick={resetToBaseline}
+              className="ml-2 text-[10px] font-bold text-indigo-600 hover:text-indigo-800 uppercase shrink-0"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+
+        {/* Header */}
         <div className="flex items-center justify-between pb-4 mb-5 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 to-cyan-400 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
@@ -253,47 +348,16 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({
             </div>
           </div>
 
-          {/* Quick Assist Toolbar */}
-          <div className="flex items-center gap-1.5 bg-slate-100/80 p-1 rounded-2xl border border-slate-200">
-            {/* Screen Reader Voice Assistant Toggle */}
-            <button
-              type="button"
-              onClick={toggleBlindMode}
-              title={isBlindMode ? "Turn off Blind Voice Assistant" : "Turn on Blind Voice Assistant"}
-              className={`p-1.5 px-2.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                isBlindMode 
-                  ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow-sm' 
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white'
-              }`}
-            >
-              <Volume2 className="w-3.5 h-3.5" />
-              <span className="text-[11px]">Voice</span>
-            </button>
-
-            {/* High Contrast Zoom Toggle */}
-            <button
-              type="button"
-              onClick={() => {
-                audioEngine.playClick();
-                setIsLowVisionMode(!isLowVisionMode);
-                setKeypadOrder([...[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].sort(() => Math.random() - 0.5)]);
-              }}
-              title="Toggle High Contrast Low-Vision Mode"
-              className={`p-1.5 rounded-xl transition-all ${
-                isLowVisionMode 
-                  ? 'bg-amber-400 text-black font-bold' 
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white'
-              }`}
-            >
-              {isLowVisionMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-            </button>
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 border border-slate-200 text-[10px] font-mono font-semibold text-slate-700">
+            <Zap className="w-3 h-3 text-amber-500" />
+            <span className="uppercase">{currentMode} Mode</span>
           </div>
         </div>
 
         {/* -------------------------------------------------------------------
-            BRANCH A: BLIND MODE (Active when Voice Assistant is on!)
+            BRANCH A: BLIND MODE (Auto-triggered by Tab Navigation / Screen Reader)
             ------------------------------------------------------------------- */}
-        {isBlindMode ? (
+        {currentMode === 'blind' ? (
           <div className="space-y-4 animate-fadeIn">
             <div className="p-4 rounded-2xl bg-cyan-50 border border-cyan-200 text-xs text-cyan-900 shadow-sm">
               <p className="font-bold mb-1 flex items-center gap-1.5 text-cyan-700">
@@ -301,7 +365,7 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({
                 Voice Assistant Narration Active
               </p>
               <p className="text-slate-700 text-[11px] leading-relaxed">
-                "Welcome Nithya. Screen reader detected. No typing required. Click the button below to feel the random vibration pulses on your physical device."
+                "Screen reader detected. No visual typing required. Click the button below to feel the random vibration pulses on your device."
               </p>
             </div>
 
@@ -321,7 +385,7 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({
                 <span>{isVibrating ? 'Vibrating Device...' : '1. Play Physical Vibration Pulses'}</span>
               </button>
               <p className="text-[11px] text-slate-500 font-mono mt-2.5">
-                Randomized count ({vibrationChallenge.pulseCount} pulses). Remote network bots cannot feel physical hardware vibrations!
+                Random count ({vibrationChallenge.pulseCount} pulses). Remote network bots cannot feel physical hardware vibrations!
               </p>
             </div>
 
@@ -346,15 +410,15 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({
 
             <button
               type="button"
-              onClick={() => setIsBlindMode(false)}
+              onClick={resetToBaseline}
               className="text-[11px] text-slate-500 hover:text-indigo-600 font-semibold text-center block w-full mt-2 transition-colors"
             >
               ← Return to standard login
             </button>
           </div>
-        ) : isIrisMode ? (
+        ) : currentMode === 'iris' ? (
           /* -------------------------------------------------------------------
-              BRANCH B: LAST RESORT IRIS SCAN (Only when user explicitly asks!)
+              BRANCH B: LAST RESORT IRIS SCAN (Severe motor disability)
               ------------------------------------------------------------------- */
           <div className="space-y-4 animate-fadeIn">
             <div className="p-3.5 rounded-2xl bg-purple-50 border border-purple-200 text-xs text-purple-900">
@@ -429,15 +493,15 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({
 
             <button
               type="button"
-              onClick={() => setIsIrisMode(false)}
+              onClick={resetToBaseline}
               className="text-[11px] text-slate-500 hover:text-indigo-600 font-semibold text-center block w-full mt-2 transition-colors"
             >
               ← Return to standard login
             </button>
           </div>
-        ) : isLowVisionMode ? (
+        ) : currentMode === 'low-vision' ? (
           /* -------------------------------------------------------------------
-              BRANCH C: LOW-VISION DECOY MODE (Active when zoomed or toggled)
+              BRANCH C: LOW-VISION DECOY MODE (Auto-triggered by Display Zoom)
               ------------------------------------------------------------------- */
           <div className="space-y-4 animate-fadeIn">
             <div className="p-3.5 bg-black border-2 border-yellow-400 rounded-2xl text-xs font-mono text-yellow-300">
@@ -461,17 +525,26 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({
               ))}
             </div>
 
-            <button
-              type="button"
-              onClick={() => setDecoyPin('')}
-              className="w-full py-2.5 rounded-xl bg-black border border-yellow-500 text-yellow-400 text-xs font-mono uppercase"
-            >
-              Clear PIN
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setDecoyPin('')}
+                className="w-1/2 py-2.5 rounded-xl bg-black border border-yellow-500 text-yellow-400 text-xs font-mono uppercase"
+              >
+                Clear PIN
+              </button>
+              <button
+                type="button"
+                onClick={resetToBaseline}
+                className="w-1/2 py-2.5 rounded-xl bg-black border border-yellow-500 text-yellow-400 text-xs font-mono uppercase"
+              >
+                Normal Scale
+              </button>
+            </div>
           </div>
         ) : (
           /* -------------------------------------------------------------------
-              BRANCH D: NORMAL BASELINE (What every normal user sees first!)
+              BRANCH D: NORMAL BASELINE (What user sees initially)
               ------------------------------------------------------------------- */
           <form onSubmit={handleNormalSubmit} className="space-y-4">
             <div>
@@ -500,8 +573,8 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({
               </div>
             </div>
 
-            {/* CAPTCHA SECTION: Adapts right inside the form if failed 2x! */}
-            {isDyslexiaMode ? (
+            {/* CAPTCHA SECTION: Adapts right inside form on Dyslexia trigger! */}
+            {currentMode === 'dyslexia' ? (
               <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 space-y-2.5 animate-fadeIn shadow-sm">
                 <div className="flex items-center justify-between text-xs text-amber-900 font-bold">
                   <span>DYSLEXIA ADAPTATION ACTIVE</span>
@@ -562,12 +635,12 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({
                   </button>
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1.5 font-mono">
-                  Enter wrong twice to test Dyslexia shape adaptation.
+                  Tip: Press Backspace 3x or fail CAPTCHA 2x to test Dyslexia shape adaptation.
                 </p>
               </div>
             )}
 
-            {!isDyslexiaMode && (
+            {currentMode !== 'dyslexia' && (
               <button
                 type="submit"
                 className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white font-bold text-xs tracking-wider uppercase transition-all shadow-lg shadow-indigo-500/25"
@@ -602,16 +675,11 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({
         )}
 
         {/* Last Resort Iris Link at Bottom (Only when not in Iris mode) */}
-        {!isIrisMode && (
+        {currentMode !== 'iris' && (
           <div className="pt-4 mt-5 border-t border-slate-100 text-center">
             <button
               type="button"
-              onClick={() => {
-                audioEngine.playClick();
-                setIsIrisMode(true);
-                setIsBlindMode(false);
-                setIsLowVisionMode(false);
-              }}
+              onClick={() => triggerBehavioralAdaptation('iris', 'Motor fallback requested. Initialized Hands-Free Ocular Scanner.')}
               className="text-xs text-purple-700 hover:text-purple-900 font-semibold inline-flex items-center gap-1.5 transition-colors"
             >
               <span>Cannot use hands or vision? Try Hands-Free Eye Access</span>
@@ -621,8 +689,72 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({
         )}
       </div>
 
+      {/* -------------------------------------------------------------------------
+          INTERACTIVE BEHAVIORAL SIMULATOR (Judges Live Demo Bar)
+          Lets judges see the telemetry adapt live in 1-click!
+          ------------------------------------------------------------------------- */}
+      <div className="w-full max-w-xl mt-5 p-3.5 rounded-2xl bg-white/90 border border-slate-200 shadow-sm">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[11px] font-mono font-bold text-slate-700 uppercase flex items-center gap-1.5">
+            <Activity className="w-3.5 h-3.5 text-indigo-600" />
+            Live Behavioral Telemetry Triggers (Demo Controller)
+          </span>
+          <span className="text-[10px] text-slate-400 font-mono">Real events or 1-Click Demo</span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          <button
+            type="button"
+            onClick={() => triggerBehavioralAdaptation(
+              'blind',
+              'Pure Tab keyboard navigation detected (0px mouse movement). Screen-reader pattern recognized.'
+            )}
+            className="p-2 rounded-xl bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 text-cyan-800 font-semibold text-left transition-all"
+          >
+            <span className="text-[10px] text-cyan-600 block uppercase font-mono">Trigger 01</span>
+            <span>⌨️ Press Tab 2x (Blind)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => triggerBehavioralAdaptation(
+              'dyslexia',
+              'Typo correction struggle (3+ backspaces & CAPTCHA retries). Cognitive friction recognized.'
+            )}
+            className="p-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 font-semibold text-left transition-all"
+          >
+            <span className="text-[10px] text-amber-600 block uppercase font-mono">Trigger 02</span>
+            <span>✏️ Typo / 2x Fail (Dyslexia)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => triggerBehavioralAdaptation(
+              'low-vision',
+              'Display zoom > 130% detected. Shoulder-surfing decoy shield enabled.'
+            )}
+            className="p-2 rounded-xl bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-800 font-semibold text-left transition-all"
+          >
+            <span className="text-[10px] text-purple-600 block uppercase font-mono">Trigger 03</span>
+            <span>🔍 Zoom &gt; 130% (Low Vision)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={resetToBaseline}
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-semibold text-left transition-all flex items-center justify-between"
+          >
+            <div>
+              <span className="text-[10px] text-slate-500 block uppercase font-mono">Reset</span>
+              <span>Baseline Form</span>
+            </div>
+            <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+          </button>
+        </div>
+      </div>
+
       {/* Discreet Judge Tools (Floating beneath the card) */}
-      <div className="flex flex-wrap items-center justify-center gap-2 mt-5">
+      <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
         <button
           type="button"
           onClick={onOpenAttackerSim}
