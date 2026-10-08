@@ -24,16 +24,19 @@ import { adaptiveEngine } from '../services/adaptiveEngine';
 import { audioEngine } from '../services/audioEngine';
 import { speechService } from '../services/speechService';
 
-interface UnifiedLoginProps {
+export type AdaptiveMode = 'normal' | 'blind' | 'low-vision' | 'dyslexia' | 'iris' | 'tremor';
+
+export interface UnifiedLoginProps {
   onSuccess: (method: string, user: string) => void;
+  externalMode?: AdaptiveMode;
+  onModeChange?: (mode: AdaptiveMode) => void;
 }
 
-type AdaptiveMode = 'normal' | 'blind' | 'low-vision' | 'dyslexia' | 'iris';
-
-export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
+export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess, externalMode, onModeChange }) => {
   // Current Adaptive State: Starts at 100% Normal Baseline. Transforms purely on user behavior!
   const [currentMode, setCurrentMode] = useState<AdaptiveMode>('normal');
   const [behavioralNotice, setBehavioralNotice] = useState<string | null>(null);
+
 
   // Form Fields
   const [username, setUsername] = useState<string>('nithya@accessauth.org');
@@ -98,6 +101,39 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
       setCameraActive(false);
     }
   };
+
+  // Ensure webcam stream is attached to videoRef as soon as video element is mounted in DOM
+  useEffect(() => {
+    if (videoRef.current && cameraStream) {
+      videoRef.current.srcObject = cameraStream;
+    }
+  }, [cameraStream, currentMode]);
+
+  // Sync with externalMode from Judge Interactive Persona Bar
+  useEffect(() => {
+    if (!externalMode) return;
+    if (externalMode === currentMode && !(externalMode === 'tremor' && !showColorKeyboard)) return;
+
+    if (externalMode === 'normal') {
+      resetToNormal();
+    } else if (externalMode === 'tremor') {
+      setCurrentMode('tremor');
+      setShowColorKeyboard(true);
+      setBehavioralNotice("Motor Tremor / Typing Delay (>4s pause). Large tactile color keyboard activated.");
+      audioEngine.playBinauralTone('center', 520);
+      speechService.speak("Motor tremor assistance activated. High-contrast tactile color keyboard deployed.");
+      onModeChange?.('tremor');
+    } else {
+      const notices: Record<string, string> = {
+        blind: 'Screen-reader keyboard navigation detected (Zero mouse displacement). Voice & Haptic Mode activated.',
+        'low-vision': 'Display zoom magnification >= 150% detected. Activating Giant High-Visibility CAPTCHA.',
+        dyslexia: '3 Failed CAPTCHA attempts (MWPQ character confusion detected). Activating Symbol Stamp CAPTCHA.',
+        iris: 'Hands-Free Gaze Tracking Mode activated. Real camera active with glowing beam of light.'
+      };
+      triggerBehavioralSwitch(externalMode, notices[externalMode] || 'Adaptive mode active.');
+    }
+  }, [externalMode]);
+
 
   // -------------------------------------------------------------------------
   // BEHAVIORAL AUTO-DETECTION ENGINE
@@ -201,6 +237,7 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
   const triggerBehavioralSwitch = (mode: AdaptiveMode, notice: string) => {
     audioEngine.playClick();
     setCurrentMode(mode);
+    onModeChange?.(mode);
     setBehavioralNotice(notice);
     setStatus('idle');
     setErrorMessage('');
@@ -226,6 +263,7 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
     audioEngine.playClick();
     stopCamera();
     setCurrentMode('normal');
+    onModeChange?.('normal');
     setBehavioralNotice(null);
     setShowColorKeyboard(false);
     mouseMovedRef.current = false;

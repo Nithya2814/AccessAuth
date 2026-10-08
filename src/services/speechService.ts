@@ -1,8 +1,12 @@
 // Accessible Speech Synthesizer for NeuroPass Voice Guidance
 
+type SpeechListener = (text: string) => void;
+
 class SpeechService {
   private enabled: boolean = true;
   private synth: SpeechSynthesis | null = null;
+  private listeners: SpeechListener[] = [];
+  public lastSpokenText: string = "";
 
   constructor() {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -21,7 +25,19 @@ class SpeechService {
     return this.enabled;
   }
 
+  public subscribe(listener: SpeechListener): () => void {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== listener);
+    };
+  }
+
   public speak(text: string, interrupt: boolean = true) {
+    this.lastSpokenText = text;
+    this.listeners.forEach(cb => {
+      try { cb(text); } catch {}
+    });
+
     if (!this.enabled || !this.synth) return;
 
     if (interrupt) {
@@ -44,3 +60,4 @@ class SpeechService {
 }
 
 export const speechService = new SpeechService();
+
