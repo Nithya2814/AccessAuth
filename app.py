@@ -55,8 +55,8 @@ class SafeDict(dict):
 
 # ----------------- SESSION STATE & CONFIG -----------------
 AVAILABLE_LANGUAGES = [
-    "English", "Tamil", "Hindi", "Telugu", "Kannada", 
-    "Malayalam", "Bengali", "Marathi", "Spanish", "French"
+    "English", "தமிழ்", "हिन्दी", "తెలుగు", "ಕನ್ನಡ", 
+    "	മലയാളം", "বাংলা", "मराठी", "Español", "	Français"
 ]
 FONT_OPTIONS = [
     "Standard (100%)", 
