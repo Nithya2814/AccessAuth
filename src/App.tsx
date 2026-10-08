@@ -6,20 +6,17 @@ import {
   UserCheck
 } from 'lucide-react';
 import { Header } from './components/Header';
-import { DemoController } from './components/DemoController';
 import { AdaptiveLoginForm } from './components/AdaptiveLoginForm';
 import { AttackerDashboard } from './components/AttackerDashboard';
 import { GuardianRecovery } from './components/GuardianRecovery';
 import { ArchitectureModal } from './components/ArchitectureModal';
 import { cryptoEngine } from './services/cryptoEngine';
 import type { AuthLog } from './services/cryptoEngine';
-import type { UserPersonaMode } from './services/adaptiveEngine';
 import { adaptiveEngine } from './services/adaptiveEngine';
 import { audioEngine } from './services/audioEngine';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<'auditory' | 'cognitive' | 'eye' | 'attacker' | 'guardian' | 'architecture'>('auditory');
-  const [personaMode, setPersonaMode] = useState<UserPersonaMode>('normal');
   const [voiceEnabled, setVoiceEnabled] = useState<boolean>(true);
   const [highContrast, setHighContrast] = useState<boolean>(false);
   const [authenticatedUser, setAuthenticatedUser] = useState<string | null>(null);
@@ -134,21 +131,10 @@ export function App() {
           </div>
         ) : (
           <>
-            {/* Show Demo Controller for Judges on the Main Auth Views */}
-            {(activeTab === 'auditory' || activeTab === 'cognitive' || activeTab === 'eye') && (
-              <DemoController
-                currentMode={personaMode}
-                onModeSelect={(mode) => setPersonaMode(mode)}
-                voiceEnabled={voiceEnabled}
-              />
-            )}
-
             {/* Active Content Body */}
             <div className="flex-1">
               {(activeTab === 'auditory' || activeTab === 'cognitive' || activeTab === 'eye') && (
                 <AdaptiveLoginForm
-                  mode={personaMode}
-                  onModeChange={(mode) => setPersonaMode(mode)}
                   onSuccess={handleAuthSuccess}
                   voiceEnabled={voiceEnabled}
                 />
