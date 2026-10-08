@@ -95,3 +95,12 @@ def reset_failed_attempts(email: str):
     """, (email.strip().lower(),))
     conn.commit()
     conn.close()
+
+def get_all_users_with_face():
+    """Retrieves all registered users who have enrolled face biometric templates."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, fullname, email, phone, face_data FROM users WHERE face_data IS NOT NULL AND face_data != ''")
+    rows = cursor.fetchall()
+    conn.close()
+    return rows

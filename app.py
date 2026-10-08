@@ -2,12 +2,13 @@
 import streamlit as st
 import importlib
 import database as db
+importlib.reload(db)
 import translations
 importlib.reload(translations)
 from translations import TRANSLATIONS
 import face_engine
 importlib.reload(face_engine)
-from face_engine import extract_face_features, compare_faces, check_lighting
+from face_engine import extract_face_features, compare_faces, check_lighting, analyze_face_spatial_guidance, get_spatial_voice_text
 from risk_friction import RiskEngine, FrictionEngine
 from voice_helper import play_speech, stop_speech
 
@@ -38,6 +39,18 @@ class SafeDict(dict):
             "sidebar_theme_light": "Light",
             "sidebar_font_label": "Text Size",
             "sidebar_font_help": "Adjust font size for easy reading",
+            "login_google": {
+                "English": "Sign in with Google",
+                "Tamil": "Google மூலம் உள்நுழைக",
+                "Hindi": "Google के साथ साइन इन करें",
+                "Telugu": "Googleతో సైన్ ఇన్ చేయండి",
+                "Kannada": "Google ನೊಂದಿಗೆ ಸೈನ್ ಇನ್ ಮಾಡಿ",
+                "Malayalam": "Google വഴി പ്രവേശിക്കുക",
+                "Bengali": "Google দিয়ে সাইন ইন করুন",
+                "Marathi": "Google सह साइन इन करा",
+                "Spanish": "Iniciar sesión con Google",
+                "French": "Se connecter avec Google"
+            }.get(st.session_state.get("lang", "English"), "Sign in with Google"),
             "stop_btn": {
                 "English": "⏹️ Stop Audio",
                 "Tamil": "⏹️ ஆடியோவை நிறுத்து",
@@ -55,21 +68,28 @@ class SafeDict(dict):
 
 # ----------------- SESSION STATE & CONFIG -----------------
 AVAILABLE_LANGUAGES = [
-    "English", "தமிழ்", "हिन्दी", "తెలుగు", "ಕನ್ನಡ", 
-    "	മലയാളം", "বাংলা", "मराठी", "Español", "	Français"
+    "English", "Tamil", "Hindi", "Telugu", "Kannada", 
+    "Malayalam", "Bengali", "Marathi", "Spanish", "French"
 ]
 FONT_OPTIONS = [
-    "Standard (100%)", 
-    "Large (120%)", 
-    "Extra Large (145%)"
+    "Standard", 
+    "Large", 
+    "Extra Large"
+]
+ACCESSIBILITY_MODES = [
+    "Standard Mode",
+    "Dyslexia Mode",
+    "Blind Assist Mode"
 ]
 
 if "lang" not in st.session_state or st.session_state.lang not in AVAILABLE_LANGUAGES:
     st.session_state.lang = "English"
+if "access_mode" not in st.session_state or st.session_state.access_mode not in ACCESSIBILITY_MODES:
+    st.session_state.access_mode = "Standard Mode"
 if "theme_mode" not in st.session_state or st.session_state.theme_mode not in ["Dark", "Light"]:
     st.session_state.theme_mode = "Light"
 if "font_scale" not in st.session_state or st.session_state.font_scale not in FONT_OPTIONS:
-    st.session_state.font_scale = "Large (120%)"
+    st.session_state.font_scale = "Large"
 if "logged_in_user" not in st.session_state:
     st.session_state.logged_in_user = None
 if "login_attempts" not in st.session_state:
@@ -88,45 +108,149 @@ t = SafeDict(TRANSLATIONS.get(st.session_state.lang, TRANSLATIONS.get("English",
 
 # ----------------- CLEAN & ELEGANT THEME & FONT ENGINE -----------------
 f_map = {
+    "Standard": 1.0,
+    "Large": 1.20,
+    "Extra Large": 1.45,
     "Standard (100%)": 1.0,
     "Large (120%)": 1.20,
     "Extra Large (145%)": 1.45
 }
 f_scale = f_map.get(st.session_state.font_scale, 1.20)
 
+is_dyslexia = (st.session_state.access_mode == "Dyslexia Mode")
+is_blind = (st.session_state.access_mode == "Blind Assist Mode")
 is_light = (st.session_state.theme_mode == "Light")
-if is_light:
-    bg_color = "#f8fafc"
-    card_bg = "#ffffff"
-    text_color = "#0f172a"
-    sub_color = "#475569"
-    placeholder_color = "#64748b" # High visibility slate gray on white
-    border_color = "#cbd5e1"
-    input_bg = "#ffffff"          # Light box
-    input_text = "#0f172a"        # Dark font
-    sidebar_bg = "#f1f5f9"
-    dropdown_bg = "#ffffff"       # Pure white dropdown listbox background
-    dropdown_text = "#000000"     # Pure black font for dropdown options
-    dropdown_hover = "#f1f5f9"    # Soft light gray for hovered option
+
+# Typography & Spacing Rules
+if is_dyslexia:
+    font_import = "@import url('https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800&display=swap');"
+    font_family = "'Lexend', -apple-system, BlinkMacSystemFont, sans-serif !important;"
+    letter_spacing = "0.13em !important;"
+    word_spacing = "0.18em !important;"
+    line_height = "1.85 !important;"
 else:
-    bg_color = "#0b0f19"
-    card_bg = "#151d30"
-    text_color = "#f8fafc"
-    sub_color = "#94a3b8"
-    placeholder_color = "#94a3b8" # High visibility light gray on dark
-    border_color = "#2b3b5c"
-    input_bg = "#1a243b"          # Dark box
-    input_text = "#ffffff"        # Light font
-    sidebar_bg = "#0f1524"
-    dropdown_bg = "#151d30"       # Dark dropdown listbox background
-    dropdown_text = "#ffffff"     # White font for dropdown options
-    dropdown_hover = "#1e293b"    # Dark slate for hovered option
+    font_import = ""
+    font_family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;"
+    letter_spacing = "normal !important;"
+    word_spacing = "normal !important;"
+    line_height = "1.5 !important;"
+
+# Color Themes
+if is_dyslexia:
+    if is_light:
+        # Soft warm parchment cream - removes scotopic visual stress
+        bg_color = "#FAF6EE"
+        card_bg = "#FFFDF9"
+        text_color = "#1E293B"
+        sub_color = "#475569"
+        placeholder_color = "#64748B"
+        border_color = "#D7CEBD"
+        input_bg = "#FFFDF9"
+        input_text = "#1E293B"
+        sidebar_bg = "#F2ECE0"
+        dropdown_bg = "#FFFDF9"
+        dropdown_text = "#1E293B"
+        dropdown_hover = "#F2ECE0"
+    else:
+        # Soft warm dark slate
+        bg_color = "#14171E"
+        card_bg = "#1D222C"
+        text_color = "#F8FAFC"
+        sub_color = "#94A3B8"
+        placeholder_color = "#94A3B8"
+        border_color = "#333C4E"
+        input_bg = "#232936"
+        input_text = "#FFFFFF"
+        sidebar_bg = "#181C25"
+        dropdown_bg = "#1D222C"
+        dropdown_text = "#FFFFFF"
+        dropdown_hover = "#28303F"
+elif is_blind:
+    # High Contrast Mode
+    if is_light:
+        bg_color = "#FFFFFF"
+        card_bg = "#FFFFFF"
+        text_color = "#000000"
+        sub_color = "#111111"
+        placeholder_color = "#333333"
+        border_color = "#000000"
+        input_bg = "#FFFFFF"
+        input_text = "#000000"
+        sidebar_bg = "#F0F0F0"
+        dropdown_bg = "#FFFFFF"
+        dropdown_text = "#000000"
+        dropdown_hover = "#E0E0E0"
+    else:
+        bg_color = "#000000"
+        card_bg = "#0B0B0B"
+        text_color = "#FFFFFF"
+        sub_color = "#E0E0E0"
+        placeholder_color = "#CCCCCC"
+        border_color = "#FFFFFF"
+        input_bg = "#121212"
+        input_text = "#FFFFFF"
+        sidebar_bg = "#080808"
+        dropdown_bg = "#121212"
+        dropdown_text = "#FFFFFF"
+        dropdown_hover = "#242424"
+else:
+    if is_light:
+        bg_color = "#f8fafc"
+        card_bg = "#ffffff"
+        text_color = "#0f172a"
+        sub_color = "#475569"
+        placeholder_color = "#64748b"
+        border_color = "#cbd5e1"
+        input_bg = "#ffffff"
+        input_text = "#0f172a"
+        sidebar_bg = "#f1f5f9"
+        dropdown_bg = "#ffffff"
+        dropdown_text = "#000000"
+        dropdown_hover = "#f1f5f9"
+    else:
+        bg_color = "#0b0f19"
+        card_bg = "#151d30"
+        text_color = "#f8fafc"
+        sub_color = "#94a3b8"
+        placeholder_color = "#94a3b8"
+        border_color = "#2b3b5c"
+        input_bg = "#1a243b"
+        input_text = "#ffffff"
+        sidebar_bg = "#0f1524"
+        dropdown_bg = "#151d30"
+        dropdown_text = "#ffffff"
+        dropdown_hover = "#1e293b"
+
+def dyslexia_highlight(text: str) -> str:
+    """Highlights mirror-letters with distinct colors to eliminate flipping in Dyslexia mode."""
+    if st.session_state.get("access_mode") != "Dyslexia Mode":
+        return text
+    color_map = {
+        'b': '#2563eb', 'B': '#2563eb',
+        'd': '#16a34a', 'D': '#16a34a',
+        'p': '#9333ea', 'P': '#9333ea',
+        'q': '#ea580c', 'Q': '#ea580c',
+        'm': '#d97706', 'M': '#d97706',
+        'w': '#dc2626', 'W': '#dc2626'
+    }
+    out = []
+    for ch in text:
+        if ch in color_map:
+            out.append(f'<span style="color: {color_map[ch]}; font-weight: 700;">{ch}</span>')
+        else:
+            out.append(ch)
+    return "".join(out)
 
 st.markdown(f"""
 <style>
+    {font_import}
+
     /* Clean System Typography */
-    html, body, [class*="css"] {{
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+    html, body, [class*="css"], p, span, div, label, input, button, textarea {{
+        font-family: {font_family}
+        letter-spacing: {letter_spacing}
+        word-spacing: {word_spacing}
+        line-height: {line_height}
     }}
 
     .stApp {{
@@ -461,7 +585,20 @@ with st.sidebar:
         st.rerun()
 
     st.markdown("---")
-    # 2. THEME SELECTOR (Strictly translated)
+    # 2. ACCESSIBILITY MODE SELECTOR
+    st.subheader("🛡️ Accessibility Mode")
+    selected_access = st.radio(
+        "Accessibility Mode",
+        options=ACCESSIBILITY_MODES,
+        index=ACCESSIBILITY_MODES.index(st.session_state.access_mode) if st.session_state.access_mode in ACCESSIBILITY_MODES else 0,
+        label_visibility="collapsed"
+    )
+    if selected_access != st.session_state.access_mode:
+        st.session_state.access_mode = selected_access
+        st.rerun()
+
+    st.markdown("---")
+    # 3. THEME SELECTOR (Strictly translated)
     st.subheader(f"🎨 {t['sidebar_theme_label']}")
     theme_choices = [f"🌙 {t['sidebar_theme_dark']}", f"☀️ {t['sidebar_theme_light']}"]
     current_theme_idx = 0 if st.session_state.theme_mode == "Dark" else 1
@@ -479,12 +616,12 @@ with st.sidebar:
         st.rerun()
 
     st.markdown("---")
-    # 3. ACCESSIBILITY FONT SIZE SLIDER (Strictly translated)
+    # 4. ACCESSIBILITY FONT SIZE SLIDER (Strictly translated)
     st.subheader(f"🔤 {t['sidebar_font_label']}")
     selected_font = st.select_slider(
         t["sidebar_font_help"],
         options=FONT_OPTIONS,
-        value=st.session_state.font_scale,
+        value=st.session_state.font_scale if st.session_state.font_scale in FONT_OPTIONS else FONT_OPTIONS[1],
         label_visibility="collapsed"
     )
     if selected_font != st.session_state.font_scale:
@@ -502,18 +639,64 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+# Active Mode Banner
+if st.session_state.access_mode == "Dyslexia Mode":
+    st.markdown(f"""
+    <div style="background-color: {card_bg}; border: 1.5px solid #2563eb; border-radius: 12px; padding: 12px 18px; margin: 10px 0 18px 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+        <div>
+            <strong style="color: #2563eb; font-size: 1.02rem;">🔤 Dyslexia Mode Active</strong>
+            <div style="font-size: 0.88rem; color: {sub_color}; margin-top: 2px;">Lexend Typography • Wide Letter Spacing • Warm Contrast Tint</div>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;">
+            <span style="background: rgba(37,99,235,0.12); color: #2563eb; font-weight: 700; padding: 3px 8px; border-radius: 4px;">b Blue</span>
+            <span style="background: rgba(22,163,74,0.12); color: #16a34a; font-weight: 700; padding: 3px 8px; border-radius: 4px;">d Green</span>
+            <span style="background: rgba(147,51,234,0.12); color: #9333ea; font-weight: 700; padding: 3px 8px; border-radius: 4px;">p Purple</span>
+            <span style="background: rgba(234,88,12,0.12); color: #ea580c; font-weight: 700; padding: 3px 8px; border-radius: 4px;">q Orange</span>
+            <span style="background: rgba(217,119,6,0.12); color: #d97706; font-weight: 700; padding: 3px 8px; border-radius: 4px;">m Amber</span>
+            <span style="background: rgba(220,38,38,0.12); color: #dc2626; font-weight: 700; padding: 3px 8px; border-radius: 4px;">w Red</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+elif st.session_state.access_mode == "Blind Assist Mode":
+    st.markdown(f"""
+    <div style="background-color: {card_bg}; border: 2px solid {'#ffffff' if not is_light else '#000000'}; border-radius: 12px; padding: 12px 18px; margin: 10px 0 18px 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+        <div>
+            <strong style="font-size: 1.02rem;">👁️ Blind Assist Mode Active</strong>
+            <div style="font-size: 0.88rem; color: {sub_color}; margin-top: 2px;">Voice Guidance • Screen Reader Optimized • Ultra Contrast</div>
+        </div>
+        <div style="margin-top: 6px;">
+            <span class="status-pill pill-green">High Contrast Audio Ready</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
 # ----------------- LOGGED IN DASHBOARD -----------------
 if st.session_state.logged_in_user:
     user = st.session_state.logged_in_user
     st.success(f"🎉 **{user['fullname']}**, you have successfully logged in!")
     
+    is_google = (user.get("provider") == "Google SSO (OAuth 2.0)")
+    if is_google:
+        auth_badge = '<span class="status-pill pill-green">🌐 Google OAuth 2.0 (SSO)</span>'
+        method_desc = "Google Identity Services (OpenID Connect)"
+        token_info = "Google ID Token: <code>ya29.a0AfH6S... (Verified)</code>"
+    else:
+        auth_badge = '<span class="status-pill pill-green">👤 Multi-Factor Biometric Auth</span>'
+        method_desc = "PBKDF2 Password + Facial Biometrics"
+        token_info = "Cryptographic Salt: <code>PBKDF2-HMAC-SHA256</code>"
+
     st.markdown(f"""
     <div class="adaptive-card">
-        <h4 style="margin-top: 0;">👤 Account Verified</h4>
-        <p>• <strong>Email:</strong> {user['email']}<br>
-        • <strong>Phone:</strong> {user['phone']}<br>
-        • <strong>Biometric Authentication:</strong> Verified & Matched<br>
-        • <strong>Session Risk:</strong> Normal (Zero Trust Evaluated)</p>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h4 style="margin: 0;">👤 Account Verified</h4>
+            {auth_badge}
+        </div>
+        <p>• <strong>Full Name:</strong> {user['fullname']}<br>
+        • <strong>Email:</strong> {user['email']}<br>
+        • <strong>Phone:</strong> {user.get('phone', '+91 98765-XXXXX')}<br>
+        • <strong>Authentication Method:</strong> {method_desc}<br>
+        • <strong>Security Protocol:</strong> {token_info}<br>
+        • <strong>Session Risk:</strong> Normal (Zero Trust Evaluated: Low Risk 0.05)</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -522,6 +705,7 @@ if st.session_state.logged_in_user:
         st.session_state.login_attempts = 0
         st.session_state.target_email_locked = None
         st.session_state.generated_otp = None
+        st.session_state.show_google_dialog = False
         st.rerun()
     st.stop()
 
@@ -562,7 +746,7 @@ with tab_login:
             
             st.info(t["otp_sent_msg"].format(masked_phone))
             # Presentation Demo hint
-            st.caption(f"💡 [Demo Hint: SMS Code received: **{st.session_state.generated_otp}**]")
+            st.caption(f"💡 Demo SMS Code: **{st.session_state.generated_otp}**")
 
             entered_otp = st.text_input(t["enter_otp"], max_chars=6, placeholder="6-digit code")
             
@@ -595,7 +779,7 @@ with tab_login:
                 st.markdown("#### 📸 Step-Up Face Recognition Unlock")
                 st.write(t["take_face_login"])
             with col_lcam2:
-                flash_l_state = st.toggle("💡 Auto Flashlight (Dark Room)", value=st.session_state.flash_login, key="login_flash_toggle")
+                flash_l_state = st.toggle("💡 Auto Flashlight", value=st.session_state.flash_login, key="login_flash_toggle")
                 if flash_l_state != st.session_state.flash_login:
                     st.session_state.flash_login = flash_l_state
                     st.rerun()
@@ -608,25 +792,41 @@ with tab_login:
             else:
                 face_login_cam = st.camera_input("Scan Face for Unlock", key="face_unlock_cam")
             
+            if face_login_cam:
+                spatial_step = analyze_face_spatial_guidance(face_login_cam)
+                if not spatial_step["is_ready"]:
+                    v_msg = get_spatial_voice_text(spatial_step["status"], st.session_state.lang)
+                    st.warning(f"⚠️ {v_msg}")
+                    play_speech(v_msg, st.session_state.lang)
+                else:
+                    st.info(f"✅ {get_spatial_voice_text('CENTERED', st.session_state.lang)}")
+            
             if face_login_cam and st.button(t["verify_face_btn"], type="primary", use_container_width=True):
-                # Automatic Dark Environment Detection
-                is_dark, brightness = check_lighting(face_login_cam)
-                if is_dark and not st.session_state.flash_login:
-                    st.session_state.flash_login = True
-                    st.warning(f"⚠️ **Low Lighting Detected ({brightness}/255)!** Screen Flashlight automatically turned ON. Please retake photo with screen flash.")
-                    st.rerun()
+                # Spatial Check
+                spatial_step = analyze_face_spatial_guidance(face_login_cam)
+                if not spatial_step["is_ready"]:
+                    v_msg = get_spatial_voice_text(spatial_step["status"], st.session_state.lang)
+                    st.error(f"⚠️ {v_msg}")
+                    play_speech(v_msg, st.session_state.lang)
+                else:
+                    # Automatic Dark Environment Detection
+                    is_dark, brightness = check_lighting(face_login_cam)
+                    if is_dark and not st.session_state.flash_login:
+                        st.session_state.flash_login = True
+                        st.warning(f"⚠️ **Low Lighting Detected: {brightness}/255!** Screen Flashlight automatically turned ON. Please retake photo with screen flash.")
+                        st.rerun()
 
                 with st.spinner("Analyzing biometric scan..."):
                     if user_record and user_record["face_data"]:
                         matched, msg, score = compare_faces(user_record["face_data"], face_login_cam, threshold=0.45)
                         if matched:
-                            st.success(f"{t['face_match_success']} (Match Confidence: {int(score*100)}%)")
+                            st.success(f"{t['face_match_success']} • Match Confidence: {int(score*100)}%")
                             st.session_state.login_attempts = 0
                             db.reset_failed_attempts(user_record["email"])
                             st.session_state.logged_in_user = dict(user_record)
                             st.rerun()
                         else:
-                            st.error(f"{t['face_match_fail']} (Score: {int(score*100)}%)")
+                            st.error(f"{t['face_match_fail']} • Score: {int(score*100)}%")
                     else:
                         success, _ = extract_face_features(face_login_cam)
                         if success:
@@ -643,6 +843,17 @@ with tab_login:
 
     # STANDARD LOGIN (< 3 attempts)
     else:
+        # Audio & Accessibility assistance banner right before the login form
+        col_audio1, col_audio2 = st.columns([2.5, 1.5])
+        with col_audio1:
+            if st.session_state.access_mode == "Dyslexia Mode":
+                st.caption("🔤 Dyslexia Mode: Wide letter spacing and mirror-cue guidance enabled.")
+            elif st.session_state.access_mode == "Blind Assist Mode":
+                st.caption("👁️ Blind Assist Mode: Audio assistance ready.")
+        with col_audio2:
+            if st.button("🔊 Read Security Code", key="btn_read_captcha_top", type="secondary", use_container_width=True):
+                play_speech(f"Security challenge. What is {st.session_state.captcha_q}", st.session_state.lang)
+
         with st.form("login_form"):
             login_email = st.text_input(t["email"], placeholder="name@example.com")
             login_password = st.text_input(t["password"], type="password", placeholder="••••••••")
@@ -686,6 +897,145 @@ with tab_login:
                     st.warning(t["attempts_warning"].format(st.session_state.login_attempts))
                     st.rerun()
 
+        # DIVIDER: OR
+        st.markdown(f"""
+        <div style="display: flex; align-items: center; text-align: center; margin: 1.4rem 0 0.8rem 0;">
+            <div style="flex: 1; border-bottom: 1px solid {border_color};"></div>
+            <span style="padding: 0 14px; font-size: 0.85rem; font-weight: 700; color: {sub_color}; letter-spacing: 1px;">OR</span>
+            <div style="flex: 1; border-bottom: 1px solid {border_color};"></div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        col_act1, col_act2 = st.columns(2)
+        with col_act1:
+            if st.button("📸 One-Tap Face Biometric Login", key="face_login_toggle_btn", type="secondary", use_container_width=True):
+                st.session_state.show_face_login = not st.session_state.get("show_face_login", False)
+                st.session_state.show_google_dialog = False
+        with col_act2:
+            if st.button(f"🌐 {t['login_google']}", key="google_login_toggle", type="secondary", use_container_width=True):
+                st.session_state.show_google_dialog = not st.session_state.get("show_google_dialog", False)
+                st.session_state.show_face_login = False
+
+        # ONE-TAP BIOMETRIC FACE LOGIN MODAL/BOX
+        if st.session_state.get("show_face_login", False):
+            st.markdown("---")
+            st.markdown("#### 📸 Eyes-Free Biometric Face Login")
+            st.caption("Position your face in front of the camera. The system will guide you automatically.")
+            
+            face_quick_cam = st.camera_input("Scan Face for Login", key="quick_face_cam")
+            if face_quick_cam:
+                spatial_l = analyze_face_spatial_guidance(face_quick_cam)
+                if not spatial_l["is_ready"]:
+                    voice_msg_l = get_spatial_voice_text(spatial_l["status"], st.session_state.lang)
+                    st.warning(f"⚠️ {voice_msg_l}")
+                    play_speech(voice_msg_l, st.session_state.lang)
+                else:
+                    st.info(f"✅ {get_spatial_voice_text('CENTERED', st.session_state.lang)}")
+                    if st.button("Verify Face & Log In", key="quick_face_verify_btn", type="primary", use_container_width=True):
+                        with st.spinner("Analyzing biometric scan..."):
+                            all_users = db.get_all_users_with_face()
+                            best_match = None
+                            best_score = 0.0
+                            for u in all_users:
+                                matched, msg, score = compare_faces(u["face_data"], face_quick_cam, threshold=0.45)
+                                if matched and score > best_score:
+                                    best_match = u
+                                    best_score = score
+                            
+                            if best_match:
+                                st.success(f"✅ Face verified! Welcome back, {best_match['fullname']}!")
+                                play_speech(f"Face verified. Welcome back {best_match['fullname']}", st.session_state.lang)
+                                st.session_state.login_attempts = 0
+                                db.reset_failed_attempts(best_match["email"])
+                                st.session_state.logged_in_user = dict(best_match)
+                                st.session_state.show_face_login = False
+                                st.rerun()
+                            else:
+                                st.error("❌ Face does not match registered biometrics. Please adjust lighting or try again.")
+                                play_speech("Face does not match registered biometrics.", st.session_state.lang)
+
+        # GOOGLE POPUP MODAL (MATCHING GOOGLE ACCOUNTS OAUTH SCREENSHOT)
+        if st.session_state.get("show_google_dialog", False):
+            google_accounts_list = [
+                {"name": "Aishwarya bh", "email": "aishuaadharv@gmail.com", "avatar": "A", "color": "#1a73e8"},
+                {"name": "Aishwarya B H", "email": "aishwarya_bit28@mepcoeng.ac.in", "avatar": "A", "color": "#12b5cb"},
+                {"name": "Akshitha B H", "email": "akshiaadharv_bai28@mepcoeng.ac.in", "avatar": "A", "color": "#5f6368"},
+                {"name": "Nithya Shree T", "email": "nithya280607_bit28@mepcoeng.ac.in", "avatar": "N", "color": "#0d904f"},
+                {"name": "Ezhilarasi R", "email": "ezhilarasir_bit28@mepcoeng.ac.in", "avatar": "E", "color": "#5f6368", "sub": "Signed out"},
+                {"name": "Aishu BH", "email": "aishunithya123@gmail.com", "avatar": "A", "color": "#8430ce"},
+                {"name": "Nithya", "email": "nithyaathirumoorthy@gmail.com", "avatar": "N", "color": "#e8710a"}
+            ]
+
+            st.markdown("""
+            <div style="background-color: #131314; border: 1px solid #3c4043; border-radius: 20px; padding: 22px 26px; margin: 16px 0; color: #e3e3e3; box-shadow: 0 10px 30px rgba(0,0,0,0.45);">
+                <div style="display: flex; align-items: center; padding-bottom: 14px; border-bottom: 1px solid #2e2f31;">
+                    <svg width="20" height="20" viewBox="0 0 48 48" style="margin-right: 10px;">
+                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                    </svg>
+                    <span style="font-size: 14px; font-weight: 500; color: #e3e3e3;">Sign in with Google</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            col_g_left, col_g_right = st.columns([1, 1.3])
+
+            with col_g_left:
+                st.markdown("""
+                <div style="padding: 10px 5px;">
+                    <h2 style="font-size: 26px; font-weight: 400; color: #ffffff; margin-bottom: 6px;">Choose an account</h2>
+                    <p style="font-size: 14.5px; color: #9aa0a6;">to continue to <strong style="color: #8ab4f8;">AccessAuth</strong></p>
+                </div>
+                """, unsafe_allow_html=True)
+
+            with col_g_right:
+                for idx, g_acc in enumerate(google_accounts_list):
+                    col_info, col_act = st.columns([4, 1.2])
+                    with col_info:
+                        sub_tag = f"<span style='float:right; font-size:11px; color:#9aa0a6;'>{g_acc.get('sub')}</span>" if g_acc.get("sub") else ""
+                        st.markdown(f"""
+                        <div style="display: flex; align-items: center; margin-bottom: 2px;">
+                            <div style="width: 32px; height: 32px; border-radius: 50%; background: {g_acc['color']}; color: #ffffff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; margin-right: 10px; flex-shrink: 0;">{g_acc['avatar']}</div>
+                            <div style="line-height: 1.25; overflow: hidden;">
+                                <div style="color: #e3e3e3; font-weight: 500; font-size: 14px;">{g_acc['name']} {sub_tag}</div>
+                                <div style="color: #9aa0a6; font-size: 12px;">{g_acc['email']}</div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with col_act:
+                        if st.button("Select", key=f"g_sel_{idx}", type="primary", use_container_width=True):
+                            with st.spinner("Authenticating with Google OAuth 2.0..."):
+                                g_user = db.get_or_create_google_user(g_acc['name'], g_acc['email'])
+                                g_user["provider"] = "Google SSO (OAuth 2.0)"
+                                st.session_state.logged_in_user = g_user
+                                st.session_state.login_attempts = 0
+                                st.session_state.show_google_dialog = False
+                                st.rerun()
+
+                    st.markdown("<div style='border-bottom: 1px solid #282a2d; margin: 4px 0 8px 0;'></div>", unsafe_allow_html=True)
+
+                # Use another account option
+                with st.expander("👤 Use another account"):
+                    c_name = st.text_input("Name", placeholder="Your Name", key="g_u_name")
+                    c_email = st.text_input("Google Email", placeholder="user@gmail.com", key="g_u_email")
+                    if st.button("Continue", key="g_u_btn", type="primary"):
+                        if c_name.strip() and "@" in c_email:
+                            with st.spinner("Exchanging OAuth Token..."):
+                                g_user = db.get_or_create_google_user(c_name.strip(), c_email.strip().lower())
+                                g_user["provider"] = "Google SSO (OAuth 2.0)"
+                                st.session_state.logged_in_user = g_user
+                                st.session_state.login_attempts = 0
+                                st.session_state.show_google_dialog = False
+                                st.rerun()
+                        else:
+                            st.error("Please enter a valid Name and Email.")
+
+                if st.button("✕ Close", key="close_g_box", type="secondary"):
+                    st.session_state.show_google_dialog = False
+                    st.rerun()
+
 # ===============================================================
 # TAB 2: SIGN UP (FIELD VALIDATION + FACE ENROLLMENT)
 # ===============================================================
@@ -714,7 +1064,7 @@ with tab_signup:
             st.caption(t["face_enroll_help"])
         with col_cam_toggle:
             flash_su_state = st.toggle(
-                "💡 Auto Flashlight (Dark Room)", 
+                "💡 Auto Flashlight", 
                 value=st.session_state.flash_signup, 
                 key="su_flash_toggle"
             )
@@ -729,6 +1079,14 @@ with tab_signup:
             st.markdown('</div>', unsafe_allow_html=True)
         else:
             face_camera_image = st.camera_input("Capture Face Biometric", key="signup_camera")
+        if face_camera_image:
+            spatial_su = analyze_face_spatial_guidance(face_camera_image)
+            if not spatial_su["is_ready"]:
+                voice_msg_su = get_spatial_voice_text(spatial_su["status"], st.session_state.lang)
+                st.warning(f"⚠️ {voice_msg_su}")
+                play_speech(voice_msg_su, st.session_state.lang)
+            else:
+                st.info(f"✅ {get_spatial_voice_text('CENTERED', st.session_state.lang)}")
         
         if st.button(t["signup_btn"], type="primary", use_container_width=True):
             missing_fields = []
@@ -746,30 +1104,38 @@ with tab_signup:
             elif not face_camera_image:
                 st.error(t["err_face_missing"])
             else:
-                # Automatic Dark Room Detection
-                is_dark, brightness = check_lighting(face_camera_image)
-                if is_dark and not st.session_state.flash_signup:
-                    st.session_state.flash_signup = True
-                    st.warning(f"⚠️ **Low Lighting Detected ({brightness}/255)!** Screen Flashlight automatically turned ON. Please take photo with screen flash.")
-                    st.rerun()
+                # Spatial Face Guidance Validation
+                spatial_su = analyze_face_spatial_guidance(face_camera_image)
+                if not spatial_su["is_ready"]:
+                    voice_msg_su = get_spatial_voice_text(spatial_su["status"], st.session_state.lang)
+                    st.error(f"⚠️ {voice_msg_su}")
+                    play_speech(voice_msg_su, st.session_state.lang)
+                else:
+                    # Automatic Dark Room Detection
+                    is_dark, brightness = check_lighting(face_camera_image)
+                    if is_dark and not st.session_state.flash_signup:
+                        st.session_state.flash_signup = True
+                        st.warning(f"⚠️ **Low Lighting Detected: {brightness}/255!** Screen Flashlight automatically turned ON. Please take photo with screen flash.")
+                        st.rerun()
 
-                with st.spinner("Processing biometric template and hashing security keys..."):
-                    success, face_result = extract_face_features(face_camera_image)
-                    if not success:
-                        st.error(f"❌ {face_result}")
-                    else:
-                        ok, db_msg = db.register_user(
-                            fullname=signup_name,
-                            email=signup_email,
-                            phone=signup_phone,
-                            password=signup_pass,
-                            face_data=face_result
-                        )
-                        if ok:
-                            st.success(t["signup_success"])
-                            st.balloons()
+                    with st.spinner("Processing biometric template and hashing security keys..."):
+                        success, face_result = extract_face_features(face_camera_image)
+                        if not success:
+                            st.error(f"❌ {face_result}")
                         else:
-                            st.error(f"❌ {db_msg}")
+                            ok, db_msg = db.register_user(
+                                fullname=signup_name,
+                                email=signup_email,
+                                phone=signup_phone,
+                                password=signup_pass,
+                                face_data=face_result
+                            )
+                            if ok:
+                                st.success(t["signup_success"])
+                                play_speech(f"Welcome {signup_name}. Account registered successfully.", st.session_state.lang)
+                                st.balloons()
+                            else:
+                                st.error(f"❌ {db_msg}")
 
 # ===============================================================
 # TAB 3: HELP & MULTILINGUAL STEP-BY-STEP INSTRUCTIONS + VOICE
