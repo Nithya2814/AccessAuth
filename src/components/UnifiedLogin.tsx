@@ -15,7 +15,8 @@ import {
   Crosshair, 
   Volume2, 
   ShieldCheck,
-  Zap
+  Zap,
+  Palette
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { adaptiveEngine } from '../services/adaptiveEngine';
@@ -39,78 +40,64 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
   const [status, setStatus] = useState<'idle' | 'verifying' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState<string>('');
 
-  // Normal Text CAPTCHA State
-  const [textCaptcha, setTextCaptcha] = useState<string>('7Q9X');
+  // 1. Dyslexia / Text CAPTCHA: Confusing letters (MWPQ) that dyslexic users struggle with
+  const [textCaptcha, setTextCaptcha] = useState<string>('MWPQ');
   const [userCaptcha, setUserCaptcha] = useState<string>('');
-  const [failCount, setFailCount] = useState<number>(0);
+  const [captchaFails, setCaptchaFails] = useState<number>(0);
 
-  // Blind Mode Vibration State
+  // 2. Blind Mode Vibration State
   const [vibrationChallenge, setVibrationChallenge] = useState(adaptiveEngine.getVibrationChallenge());
   const [isVibrating, setIsVibrating] = useState<boolean>(false);
 
-  // Low-Vision Decoy Keypad State
-  const [decoyPin, setDecoyPin] = useState<string>('');
-  const [keypadOrder, setKeypadOrder] = useState<number[]>([1, 2, 3, 4, 5, 6, 7, 8, 9, 0]);
+  // 3. Typing Hesitation & Enhanced Color Keyboard Assist
+  const [showColorKeyboard, setShowColorKeyboard] = useState<boolean>(false);
+  const typingTimerRef = useRef<number | null>(null);
 
-  // Dyslexia Shape State
-  const targetShape: 'star' = 'star';
+  // 4. Low-Vision 150% Font State
+  const [is150Font, setIs150Font] = useState<boolean>(false);
 
-  // Iris Candidate State
+  // 5. Iris Candidate State
   const [irisCandidate, setIrisCandidate] = useState<'Nithya' | 'Aishu'>('Nithya');
   const [gazeDotPos, setGazeDotPos] = useState<{ x: number; y: number }>({ x: 50, y: 50 });
   const [isScanning, setIsScanning] = useState<boolean>(false);
 
   // Behavioral Telemetry Tracking Refs
   const mouseMovedRef = useRef<boolean>(false);
-  const backspaceCounter = useRef<number>(0);
 
   // -------------------------------------------------------------------------
-  // BEHAVIORAL AUTO-DETECTION ENGINE (Listens passively in background)
+  // BEHAVIORAL AUTO-DETECTION ENGINE (Passively listens in background)
   // -------------------------------------------------------------------------
   useEffect(() => {
-    // 1. Mouse movement tracker: If user moves mouse, they are sighted & using a pointing device
+    // 1. Mouse movement: If user moves mouse, they are using a standard visual pointer
     const handleMouseMove = () => {
       mouseMovedRef.current = true;
     };
 
-    // 2. Keyboard listener:
-    // - Tab key navigation without mouse = BLIND user (Screen Reader behavior)
-    // - Excessive Backspaces = DYSLEXIC / Typo struggle
+    // 2. Keyboard Navigation: Blind person navigates via Tab key without mouse movement
     const handleKeyDown = (e: KeyboardEvent) => {
       if (currentMode !== 'normal') return;
 
-      // BEHAVIOR 1: User navigates using Tab key (Blind Person / Screen Reader)
+      // BEHAVIOR A: User presses Tab without moving mouse -> BLIND / Screen-Reader User
       if (e.key === 'Tab') {
-        // If user presses Tab to navigate and has NOT moved the mouse -> Auto switch to Blind Mode!
         if (!mouseMovedRef.current) {
           triggerBehavioralSwitch(
             'blind',
-            'Screen-reader keyboard navigation detected (Zero mouse movement). Voice & Haptic Mode activated.'
-          );
-        }
-      }
-
-      // BEHAVIOR 2: User presses Backspace 3+ times (Dyslexia / Typo Struggle)
-      if (e.key === 'Backspace') {
-        backspaceCounter.current += 1;
-        if (backspaceCounter.current >= 3) {
-          triggerBehavioralSwitch(
-            'dyslexia',
-            'Typo struggle detected (3+ backspaces). Replacing distorted text with Shape-Stamp CAPTCHA.'
+            'Screen-reader keyboard navigation detected (Zero mouse displacement). Voice & Haptic Mode activated.'
           );
         }
       }
     };
 
-    // 3. Display Scale / Zoom listener:
-    // - Display scaled > 1.25 or zoomed = LOW-VISION user
+    // 3. Display Scale / Zoom: Low-Blind / Low-Vision user font size >= 150%
     const handleResize = () => {
-      if (currentMode !== 'normal') return;
-      if (typeof window !== 'undefined' && window.devicePixelRatio > 1.25) {
-        triggerBehavioralSwitch(
-          'low-vision',
-          `Display zoom magnification detected (${window.devicePixelRatio.toFixed(1)}x). High-Contrast Decoy Shield enabled.`
-        );
+      if (typeof window !== 'undefined' && window.devicePixelRatio >= 1.4) {
+        setIs150Font(true);
+        if (currentMode === 'normal') {
+          triggerBehavioralSwitch(
+            'low-vision',
+            `Display zoom magnification >= 150% detected. Activating Giant High-Visibility CAPTCHA.`
+          );
+        }
       }
     };
 
@@ -118,12 +105,15 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('resize', handleResize);
 
-    // Initial check on mount: If display scale is already zoomed
-    if (typeof window !== 'undefined' && window.devicePixelRatio > 1.25 && currentMode === 'normal') {
-      triggerBehavioralSwitch(
-        'low-vision',
-        `Display zoom magnification detected (${window.devicePixelRatio.toFixed(1)}x). High-Contrast Decoy Shield enabled.`
-      );
+    // Initial check on mount
+    if (typeof window !== 'undefined' && window.devicePixelRatio >= 1.4) {
+      setIs150Font(true);
+      if (currentMode === 'normal') {
+        triggerBehavioralSwitch(
+          'low-vision',
+          `Display zoom magnification >= 150% detected. Activating Giant High-Visibility CAPTCHA.`
+        );
+      }
     }
 
     return () => {
@@ -132,6 +122,22 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
       window.removeEventListener('resize', handleResize);
     };
   }, [currentMode]);
+
+  // Typing Hesitation Tracker: If user pauses typing > 4 seconds, show Enhanced Color Keyboard!
+  const handleTypingActivity = () => {
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+    }
+
+    // Set timer for 4 seconds of idle typing
+    typingTimerRef.current = window.setTimeout(() => {
+      if (!showColorKeyboard && currentMode === 'normal') {
+        setShowColorKeyboard(true);
+        audioEngine.playBinauralTone('center', 520);
+        speechService.speak("Typing delay detected. Enhanced color keyboard assistance activated.");
+      }
+    }, 4200);
+  };
 
   // Master Behavioral Switcher
   const triggerBehavioralSwitch = (mode: AdaptiveMode, notice: string) => {
@@ -143,12 +149,11 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
 
     if (mode === 'blind') {
       triggerVibration();
-      speechService.speak("Screen reader navigation detected. Blind Accessible Mode active. You will feel random vibration pulses to verify presence.");
+      speechService.speak("Screen reader detected. Blind Accessible Mode active. You will feel random vibration pulses on your device to verify presence.");
     } else if (mode === 'dyslexia') {
-      speechService.speak("Typing difficulty detected. We have simplified verification to a Golden Star shape stamp for you.");
+      speechService.speak("Character confusion detected with MWPQ. Activating Dyslexia Mode. Distorted text removed. Please tap the Golden Star symbol stamp.");
     } else if (mode === 'low-vision') {
-      setKeypadOrder([...[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].sort(() => Math.random() - 0.5)]);
-      speechService.speak("Display zoom detected. Scrambled Decoy Keypad enabled to protect against shoulder surfing.");
+      speechService.speak("Display magnification detected. Scaled to 150% with Giant High-Visibility CAPTCHA.");
     } else if (mode === 'iris') {
       speechService.speak("Hands-Free Eye mode active. Ready for ocular biometric challenge.");
     }
@@ -159,9 +164,9 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
     audioEngine.playClick();
     setCurrentMode('normal');
     setBehavioralNotice(null);
-    backspaceCounter.current = 0;
+    setShowColorKeyboard(false);
     mouseMovedRef.current = false;
-    setFailCount(0);
+    setCaptchaFails(0);
     setStatus('idle');
     setErrorMessage('');
     speechService.speak("Reset to standard login form.");
@@ -186,24 +191,24 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
     }, ch.pulseCount * 320 + 200);
   };
 
-  // Handle Normal Submit & Auto-Adapt to Dyslexia on 2x failure
+  // Handle Normal Submit & Auto-Adapt to Dyslexia on 3x failure!
   const handleNormalSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     audioEngine.playClick();
 
     if (userCaptcha.toUpperCase() !== textCaptcha) {
-      const next = failCount + 1;
-      setFailCount(next);
+      const next = captchaFails + 1;
+      setCaptchaFails(next);
       audioEngine.playError();
       setStatus('error');
-      setErrorMessage(`Incorrect text CAPTCHA. (Attempt ${next}/2)`);
+      setErrorMessage(`Incorrect security CAPTCHA. (Attempt ${next}/3)`);
 
-      // BEHAVIOR: If user fails CAPTCHA 2 times -> Auto-switch to Dyslexia shape mode!
-      if (next >= 2) {
+      // POINT 3: If user fails CAPTCHA 3 times, activate Dyslexia Symbol CAPTCHA!
+      if (next >= 3) {
         setTimeout(() => {
           triggerBehavioralSwitch(
             'dyslexia',
-            'Text CAPTCHA failed twice (Visual/Dyslexic friction detected). Replaced text with Golden Star Shape Stamp.'
+            '3 Failed CAPTCHA attempts (MWPQ character confusion detected). Activating Symbol Stamp CAPTCHA.'
           );
         }, 600);
       }
@@ -212,6 +217,12 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
 
     // Success
     triggerSuccess("Standard Username & Password", username);
+  };
+
+  // Speak CAPTCHA Aloud for Low-Vision users
+  const speakCaptchaAloud = () => {
+    audioEngine.playClick();
+    speechService.speak(`Security CAPTCHA letters are: ${textCaptcha.split('').join(', ')}.`);
   };
 
   // Handle Blind Vibration Guess
@@ -227,28 +238,22 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
     }
   };
 
-  // Handle Dyslexia Shape Stamp Selection
+  // Handle Dyslexia Symbol Stamp Selection (Golden Star ⭐)
   const handleShapeSelect = (shape: string) => {
     audioEngine.playClick();
-    if (shape === targetShape) {
+    if (shape === 'star') {
       triggerSuccess("Geometric Shape-Stamp Verification", "Nithya (Dyslexia Accessible)");
     } else {
       audioEngine.playError();
       setStatus('error');
-      setErrorMessage("Please match the Golden Star stamp.");
+      setErrorMessage("Please match the Golden Star symbol ⭐.");
     }
   };
 
-  // Handle Low-Vision Decoy Keypad
-  const handleDecoyClick = (num: number) => {
+  // Handle Enhanced Color Keyboard Key Tap
+  const handleColorKeyTap = (char: string) => {
     audioEngine.playClick();
-    if (decoyPin.length < 4) {
-      const next = decoyPin + num;
-      setDecoyPin(next);
-      if (next.length === 4) {
-        triggerSuccess("High-Contrast Decoy Shield PIN", "Nithya (Low-Vision Accessible)");
-      }
-    }
+    setUserCaptcha(prev => prev + char);
   };
 
   // Handle Iris Scan
@@ -291,21 +296,19 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
   return (
     <div className="w-full flex flex-col items-center justify-center py-4 px-2 sm:px-4">
 
-      {/* Pristine Real Login Card (Zero Tabs, Zero Manual Switches!) */}
+      {/* Pristine Real Login Card (Zero Tabs, 100% Behavioral Intelligence) */}
       <div className={`w-full max-w-md card-glass rounded-3xl p-6 sm:p-8 border relative transition-all ${
-        currentMode === 'low-vision'
-          ? 'low-vision-tactile' 
-          : 'bg-white/95 border-white shadow-2xl'
-      }`}>
+        is150Font ? 'scale-150-container' : ''
+      } bg-white/95 border-white shadow-2xl`}>
 
-        {/* Behavioral Notice Banner (Only shows when system auto-adapts!) */}
+        {/* Behavioral Notice Banner (Only shows when system automatically adapts on behavior!) */}
         {behavioralNotice && (
           <div className="mb-4 p-3 rounded-2xl bg-indigo-50 border border-indigo-200 text-xs text-indigo-950 flex items-start justify-between gap-2 animate-fadeIn shadow-sm">
             <div className="flex items-start gap-2">
               <Zap className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5 animate-pulse" />
               <div>
                 <strong className="block text-indigo-900 font-bold text-[11px] uppercase">
-                  Behavioral Auto-Adaptation
+                  Behavioral Auto-Adaptation Active
                 </strong>
                 <p className="text-[11px] text-slate-700 leading-snug">{behavioralNotice}</p>
               </div>
@@ -335,7 +338,7 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
         </div>
 
         {/* -------------------------------------------------------------------
-            BRANCH A: BLIND MODE (Auto-triggered when user presses Tab / screen-reader)
+            BRANCH A: BLIND MODE (Auto-triggered when Screen Reader / Tab Key detected)
             ------------------------------------------------------------------- */}
         {currentMode === 'blind' ? (
           <div className="space-y-4 animate-fadeIn">
@@ -345,7 +348,7 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
                 Voice Assistant Guidance Active
               </p>
               <p className="text-slate-700 text-[11px] leading-relaxed">
-                "Welcome Nithya. Screen reader detected. No visual typing required. Click the button below to feel the random vibration pulses on your device."
+                "Welcome Nithya. Screen reader detected. No visual typing required. Click the button below to feel the random vibration pulses on your physical device."
               </p>
             </div>
 
@@ -398,7 +401,7 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
           </div>
         ) : currentMode === 'iris' ? (
           /* -------------------------------------------------------------------
-              BRANCH B: LAST RESORT IRIS SCAN (Severe motor disability)
+              BRANCH B: LAST RESORT IRIS SCAN (For severe motor disability)
               ------------------------------------------------------------------- */
           <div className="space-y-4 animate-fadeIn">
             <div className="p-3.5 rounded-2xl bg-purple-50 border border-purple-200 text-xs text-purple-900">
@@ -479,62 +482,22 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
               ← Return to standard login
             </button>
           </div>
-        ) : currentMode === 'low-vision' ? (
-          /* -------------------------------------------------------------------
-              BRANCH C: LOW-VISION DECOY MODE (Auto-triggered by Display Zoom)
-              ------------------------------------------------------------------- */
-          <div className="space-y-4 animate-fadeIn">
-            <div className="p-3.5 bg-black border-2 border-yellow-400 rounded-2xl text-xs font-mono text-yellow-300">
-              <strong>Anti-Shoulder-Surfing Decoy Shield:</strong> Keypad order is scrambled in local memory so onlookers cannot steal your PIN!
-            </div>
-
-            <div className="p-3 bg-black border-2 border-yellow-400 rounded-2xl text-center text-3xl font-mono font-bold tracking-widest text-yellow-300">
-              {decoyPin.padEnd(4, '○')}
-            </div>
-
-            <div className="grid grid-cols-3 gap-2.5">
-              {keypadOrder.map((num) => (
-                <button
-                  key={num}
-                  type="button"
-                  onClick={() => handleDecoyClick(num)}
-                  className="py-4 bg-black border-2 border-yellow-400 hover:bg-yellow-400 hover:text-black text-yellow-300 font-mono text-2xl font-bold rounded-2xl transition-colors"
-                >
-                  {num}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setDecoyPin('')}
-                className="w-1/2 py-2.5 rounded-xl bg-black border border-yellow-500 text-yellow-400 text-xs font-mono uppercase"
-              >
-                Clear PIN
-              </button>
-              <button
-                type="button"
-                onClick={resetToNormal}
-                className="w-1/2 py-2.5 rounded-xl bg-black border border-yellow-500 text-yellow-400 text-xs font-mono uppercase"
-              >
-                Normal Scale
-              </button>
-            </div>
-          </div>
         ) : (
           /* -------------------------------------------------------------------
-              BRANCH D: NORMAL BASELINE (Default standard login)
+              BRANCH C: NORMAL BASELINE & ADAPTIVE SUB-MODES
               ------------------------------------------------------------------- */
           <form onSubmit={handleNormalSubmit} className="space-y-4">
             <div>
               <label className="text-xs text-slate-600 font-semibold block mb-1">Username / Email</label>
               <div className="flex items-center bg-white border border-slate-200 rounded-2xl px-3.5 py-3 shadow-sm focus-within:border-indigo-500 transition-colors">
-                <User className="w-4 h-4 text-slate-400 mr-2.5" />
+                <User className="w-4 h-4 text-slate-400 mr-2.5 shrink-0" />
                 <input
                   type="text"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  onChange={(e) => {
+                    setUsername(e.target.value);
+                    handleTypingActivity();
+                  }}
                   className="bg-transparent text-slate-900 text-sm w-full outline-none font-medium"
                 />
               </div>
@@ -543,25 +506,31 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
             <div>
               <label className="text-xs text-slate-600 font-semibold block mb-1">Password</label>
               <div className="flex items-center bg-white border border-slate-200 rounded-2xl px-3.5 py-3 shadow-sm focus-within:border-indigo-500 transition-colors">
-                <Lock className="w-4 h-4 text-slate-400 mr-2.5" />
+                <Lock className="w-4 h-4 text-slate-400 mr-2.5 shrink-0" />
                 <input
                   type="password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    handleTypingActivity();
+                  }}
                   className="bg-transparent text-slate-900 text-sm w-full outline-none font-medium"
                 />
               </div>
             </div>
 
-            {/* CAPTCHA SECTION: Adapts right inside form on Dyslexia trigger! */}
+            {/* -------------------------------------------------------------------
+                DYSLEXIA MODE: Activated automatically after 3 failed CAPTCHAs!
+                Replaces distorted letters (MWPQ) with Symbol Stamp CAPTCHA!
+                ------------------------------------------------------------------- */}
             {currentMode === 'dyslexia' ? (
               <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 space-y-2.5 animate-fadeIn shadow-sm">
                 <div className="flex items-center justify-between text-xs text-amber-900 font-bold">
                   <span>DYSLEXIA ADAPTATION ACTIVE</span>
-                  <span className="text-[10px] bg-amber-400 text-amber-950 px-2 py-0.5 rounded-full font-bold">Shape Stamp</span>
+                  <span className="text-[10px] bg-amber-400 text-amber-950 px-2 py-0.5 rounded-full font-bold">Symbol Stamp</span>
                 </div>
                 <p className="text-[12px] text-slate-700">
-                  Text CAPTCHA removed. Tap the <strong className="text-amber-600">Golden Star ⭐</strong> stamp to verify:
+                  MWPQ text letters removed. Tap the <strong className="text-amber-600">Golden Star ⭐</strong> symbol stamp to verify:
                 </p>
 
                 <div className="grid grid-cols-4 gap-2.5 pt-1">
@@ -586,8 +555,40 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
                   })}
                 </div>
               </div>
+            ) : is150Font ? (
+              /* -------------------------------------------------------------------
+                  LOW-VISION / LOW-BLIND: 150% Font Scaled CAPTCHA with Audio Readout!
+                  ------------------------------------------------------------------- */
+              <div className="p-4 rounded-2xl bg-yellow-50 border-2 border-yellow-400 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-yellow-900 uppercase">150% High-Visibility CAPTCHA</span>
+                  <button
+                    type="button"
+                    onClick={speakCaptchaAloud}
+                    className="p-1.5 rounded-lg bg-yellow-200 hover:bg-yellow-300 text-yellow-900 text-xs font-semibold flex items-center gap-1"
+                  >
+                    <Volume2 className="w-3.5 h-3.5" />
+                    <span>Listen</span>
+                  </button>
+                </div>
+                <div className="py-2 px-4 bg-black border-2 border-yellow-400 rounded-xl text-center text-3xl font-mono font-bold tracking-widest text-yellow-300">
+                  {textCaptcha}
+                </div>
+                <input
+                  type="text"
+                  placeholder="Type CAPTCHA letters..."
+                  value={userCaptcha}
+                  onChange={(e) => {
+                    setUserCaptcha(e.target.value);
+                    handleTypingActivity();
+                  }}
+                  className="bg-white border-2 border-yellow-400 rounded-xl px-4 py-3 text-lg font-bold text-slate-900 w-full outline-none"
+                />
+              </div>
             ) : (
-              /* Standard Distorted Text CAPTCHA */
+              /* -------------------------------------------------------------------
+                  STANDARD DISTORTED TEXT CAPTCHA (Featuring confusing MWPQ characters)
+                  ------------------------------------------------------------------- */
               <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[11px] font-semibold text-slate-600">Security Text CAPTCHA:</span>
@@ -598,21 +599,73 @@ export const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onSuccess }) => {
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
-                    placeholder="Enter characters..."
+                    placeholder="Enter characters (e.g. MWPQ)..."
                     value={userCaptcha}
-                    onChange={(e) => setUserCaptcha(e.target.value)}
+                    onChange={(e) => {
+                      setUserCaptcha(e.target.value);
+                      handleTypingActivity();
+                    }}
                     className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 w-full outline-none shadow-sm focus:border-indigo-500"
                   />
                   <button
                     type="button"
                     onClick={() => {
                       audioEngine.playClick();
-                      setTextCaptcha(Math.random().toString(36).substring(2, 6).toUpperCase());
+                      setTextCaptcha(prev => prev === 'MWPQ' ? 'BDPQ' : 'MWPQ');
                     }}
                     className="p-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 transition-colors"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                   </button>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1.5 font-mono">
+                  3 wrong attempts will automatically activate Symbol Stamp Dyslexia Mode.
+                </p>
+              </div>
+            )}
+
+            {/* -------------------------------------------------------------------
+                ENHANCED COLOR KEYBOARD ASSIST (Appears if user types very late / pauses!)
+                ------------------------------------------------------------------- */}
+            {showColorKeyboard && currentMode !== 'dyslexia' && (
+              <div className="p-3.5 rounded-2xl bg-indigo-50/90 border border-indigo-200 animate-fadeIn space-y-2">
+                <div className="flex items-center justify-between text-xs text-indigo-900 font-bold">
+                  <span className="flex items-center gap-1.5">
+                    <Palette className="w-3.5 h-3.5 text-indigo-600" />
+                    Enhanced Color Keyboard Assistance
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowColorKeyboard(false)}
+                    className="text-[10px] text-indigo-600 hover:underline"
+                  >
+                    Hide
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-600">
+                  High-contrast colorful keys to assist with typing latency:
+                </p>
+                <div className="grid grid-cols-6 gap-1.5">
+                  {['M', 'W', 'P', 'Q', 'B', 'D'].map((char, i) => {
+                    const colors = [
+                      'bg-indigo-600 text-white',
+                      'bg-cyan-600 text-white',
+                      'bg-emerald-600 text-white',
+                      'bg-amber-500 text-white',
+                      'bg-purple-600 text-white',
+                      'bg-rose-600 text-white'
+                    ];
+                    return (
+                      <button
+                        key={char}
+                        type="button"
+                        onClick={() => handleColorKeyTap(char)}
+                        className={`color-key ${colors[i % colors.length]}`}
+                      >
+                        {char}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}

@@ -487,3 +487,33 @@ input {
   background-color: #facc15 !important;
   color: #000000 !important;
 }
+
+/* 150% Low-Vision Font Scaling Mode */
+.scale-150-container {
+  font-size: 1.25rem !important;
+  max-width: 36rem !important;
+}
+.scale-150-container input {
+  font-size: 1.25rem !important;
+  padding: 1rem 1.25rem !important;
+}
+.scale-150-container button {
+  font-size: 1.15rem !important;
+  padding: 1rem 1.25rem !important;
+}
+
+/* Enhanced Color Keyboard Key */
+.color-key {
+  font-weight: 700;
+  border-radius: 0.75rem;
+  padding: 0.5rem 0.25rem;
+  text-align: center;
+  font-size: 0.875rem;
+  transition: all 0.15s ease-in-out;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+}
+.color-key:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.1);
+}
+
