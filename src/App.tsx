@@ -4,7 +4,6 @@ import {
   X, 
   ShieldCheck, 
   Cpu, 
-  Activity,
   Sparkles
 } from 'lucide-react';
 import { UnifiedLogin } from './components/UnifiedLogin';
@@ -16,7 +15,6 @@ import { adaptiveEngine } from './services/adaptiveEngine';
 import { audioEngine } from './services/audioEngine';
 
 export function App() {
-  // Modal state for judges proofs (attacker sim, architecture, guardian recovery)
   const [activeModal, setActiveModal] = useState<'none' | 'attacker' | 'architecture' | 'guardian'>('none');
   const [authenticatedUser, setAuthenticatedUser] = useState<string | null>(null);
   const [authMethod, setAuthMethod] = useState<string | null>(null);
@@ -43,7 +41,7 @@ export function App() {
   return (
     <div className="min-h-screen text-slate-800 flex flex-col font-['Plus_Jakarta_Sans'] relative overflow-x-hidden">
       
-      {/* Top Production Navbar (Luminous & Clean) */}
+      {/* Top Header */}
       <header className="header-glass sticky top-0 z-10 px-6 py-4 flex items-center justify-between border-b border-slate-200/80">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-cyan-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
@@ -117,18 +115,13 @@ export function App() {
             </button>
           </div>
         ) : (
-          /* The Single Unified Login Card */
-          <UnifiedLogin
-            onSuccess={handleAuthSuccess}
-            onOpenAttackerSim={() => setActiveModal('attacker')}
-            onOpenArchitecture={() => setActiveModal('architecture')}
-            onOpenGuardian={() => setActiveModal('guardian')}
-          />
+          /* Pure Real Login Card (Zero Tabs!) */
+          <UnifiedLogin onSuccess={handleAuthSuccess} />
         )}
 
       </main>
 
-      {/* Modal Dialog for Judges Tools */}
+      {/* Modal Dialog for Judges Tools (Only displays when clicked in footer) */}
       {activeModal !== 'none' && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 relative shadow-2xl animate-fadeIn">
@@ -158,15 +151,34 @@ export function App() {
         </div>
       )}
 
-      {/* Footer */}
+      {/* Footer (Clean & Minimal with Discreet Documentation Links) */}
       <footer className="border-t border-slate-200/80 bg-white/70 backdrop-blur-md px-6 py-3.5 text-center text-xs text-slate-500 font-mono flex flex-col sm:flex-row items-center justify-between gap-2">
         <span className="flex items-center gap-1.5">
           <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
           AccessAuth · HACKNEXT'26 PS05 • CYBERSECURITY · SNS College of Technology
         </span>
-        <div className="flex items-center gap-1.5 text-slate-600 text-[11px]">
-          <Activity className="w-3.5 h-3.5 text-emerald-500" />
-          <span>FIDO2 / WebAuthn Enclave Ready</span>
+
+        <div className="flex items-center gap-3 text-slate-500 text-[11px]">
+          <button 
+            onClick={() => setActiveModal('attacker')} 
+            className="hover:text-indigo-600 underline transition-colors"
+          >
+            Threat Defense
+          </button>
+          <span>·</span>
+          <button 
+            onClick={() => setActiveModal('architecture')} 
+            className="hover:text-indigo-600 underline transition-colors"
+          >
+            Architecture
+          </button>
+          <span>·</span>
+          <button 
+            onClick={() => setActiveModal('guardian')} 
+            className="hover:text-indigo-600 underline transition-colors"
+          >
+            Guardian Quorum
+          </button>
         </div>
       </footer>
     </div>
