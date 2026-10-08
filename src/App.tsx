@@ -1,36 +1,27 @@
 import { useState, useEffect } from 'react';
 import { 
-  AlertTriangle, 
-  Activity,
-  ArrowRight,
-  UserCheck
+  UserCheck, 
+  X, 
+  ShieldCheck, 
+  Cpu, 
+  Activity
 } from 'lucide-react';
-import { Header } from './components/Header';
-import { AdaptiveLoginForm } from './components/AdaptiveLoginForm';
+import { UnifiedLogin } from './components/UnifiedLogin';
 import { AttackerDashboard } from './components/AttackerDashboard';
 import { GuardianRecovery } from './components/GuardianRecovery';
 import { ArchitectureModal } from './components/ArchitectureModal';
 import { cryptoEngine } from './services/cryptoEngine';
-import type { AuthLog } from './services/cryptoEngine';
 import { adaptiveEngine } from './services/adaptiveEngine';
 import { audioEngine } from './services/audioEngine';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<'auditory' | 'cognitive' | 'eye' | 'attacker' | 'guardian' | 'architecture'>('auditory');
-  const [voiceEnabled, setVoiceEnabled] = useState<boolean>(true);
-  const [highContrast, setHighContrast] = useState<boolean>(false);
+  // Modal / Drawer state for judge proofs (only opens when clicked!)
+  const [activeModal, setActiveModal] = useState<'none' | 'attacker' | 'architecture' | 'guardian'>('none');
   const [authenticatedUser, setAuthenticatedUser] = useState<string | null>(null);
   const [authMethod, setAuthMethod] = useState<string | null>(null);
-  const [isLockedOut, setIsLockedOut] = useState<boolean>(false);
-  const [recentLogs, setRecentLogs] = useState<AuthLog[]>([]);
 
   useEffect(() => {
     cryptoEngine.registerWebAuthnDevice();
-    const interval = setInterval(() => {
-      setIsLockedOut(cryptoEngine.getIsLockedOut());
-      setRecentLogs([...cryptoEngine.getLogs().slice(0, 5)]);
-    }, 1000);
-    return () => clearInterval(interval);
   }, []);
 
   const handleAuthSuccess = (method: string, user: string) => {
@@ -49,164 +40,112 @@ export function App() {
   };
 
   return (
-    <div className={`min-h-screen bg-slate-950 text-slate-100 flex flex-col font-['Plus_Jakarta_Sans'] ${highContrast ? 'high-contrast-mode' : ''}`}>
-      {/* Top Header */}
-      <Header
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        voiceEnabled={voiceEnabled}
-        setVoiceEnabled={setVoiceEnabled}
-        highContrast={highContrast}
-        setHighContrast={setHighContrast}
-      />
-
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-8 flex flex-col gap-6">
-
-        {/* Lockout Warning Banner if 3 attempts failed */}
-        {isLockedOut && (
-          <div className="p-4 rounded-2xl bg-rose-950/80 border-2 border-rose-500 text-rose-200 flex flex-col md:flex-row items-center justify-between gap-4 animate-bounce shadow-[0_0_30px_rgba(244,63,94,0.4)]">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-rose-600 text-white">
-                <AlertTriangle className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="font-bold text-white text-base">EMERGENCY SECURITY LOCKOUT ACTIVE</h3>
-                <p className="text-xs text-rose-300">
-                  3 consecutive failed authentications or intruder threat detected. Account locked.
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => {
-                audioEngine.playClick();
-                setActiveTab('guardian');
-              }}
-              className="px-5 py-2.5 rounded-xl bg-white text-slate-950 font-bold text-xs uppercase tracking-wider hover:bg-rose-100 transition-all shadow-lg flex items-center gap-2 shrink-0"
-            >
-              <span>Unlock with Guardian Quorum</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-['Plus_Jakarta_Sans'] relative">
+      
+      {/* Top Production Navbar (Clean & Minimal) */}
+      <header className="border-b border-slate-900 bg-slate-950/80 backdrop-blur-md px-6 py-3.5 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-400 shadow-md shadow-cyan-500/20">
+            <ShieldCheck className="w-4 h-4" />
           </div>
-        )}
+          <span className="font-extrabold text-white text-base tracking-tight font-['Outfit']">
+            Access<span className="text-cyan-400">Auth</span>
+          </span>
+          <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-slate-900 text-slate-400 border border-slate-800">
+            PS05 Cybersecurity
+          </span>
+        </div>
 
-        {/* If User is successfully Authenticated */}
+        <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
+          <Cpu className="w-3.5 h-3.5 text-emerald-400" />
+          <span className="hidden sm:inline">TPM 2.0 Enclave:</span>
+          <span className="text-emerald-400 font-bold">ACTIVE</span>
+        </div>
+      </header>
+
+      {/* Main Body */}
+      <main className="flex-1 flex flex-col items-center justify-center p-4">
+
         {authenticatedUser ? (
-          <div className="card-glass rounded-3xl p-8 lg:p-12 border border-emerald-500/40 bg-gradient-to-b from-slate-900/90 to-slate-950/90 backdrop-blur-2xl shadow-2xl flex flex-col items-center text-center max-w-2xl mx-auto my-auto relative overflow-hidden">
-            <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-emerald-400 via-cyan-400 to-emerald-400" />
+          /* Successful Logged In State */
+          <div className="card-glass rounded-3xl p-8 lg:p-12 border border-emerald-500/40 bg-gradient-to-b from-slate-900/90 to-slate-950/90 backdrop-blur-2xl shadow-2xl flex flex-col items-center text-center max-w-lg mx-auto relative overflow-hidden animate-fadeIn">
             <div className="w-20 h-20 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 mb-6 shadow-[0_0_30px_rgba(16,185,129,0.3)]">
               <UserCheck className="w-10 h-10" />
             </div>
 
-            <span className="text-xs font-mono uppercase px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/30 mb-3">
-              Authenticated & Hardware Bound
+            <span className="text-xs font-mono uppercase px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/30 mb-2">
+              Identity Verified & Hardware Bound
             </span>
 
-            <h2 className="text-3xl font-extrabold text-white font-['Outfit'] mb-2">
-              Welcome back, {authenticatedUser}!
+            <h2 className="text-2xl font-bold text-white font-['Outfit'] mb-1">
+              Welcome, {authenticatedUser}!
             </h2>
-            <p className="text-sm text-slate-400 mb-6 max-w-md">
-              Access unlocked via <strong className="text-emerald-300">{authMethod}</strong> backed by TPM Hardware Enclave token.
+            <p className="text-xs text-slate-400 mb-5">
+              Access granted via <strong className="text-emerald-300">{authMethod}</strong>.
             </p>
 
-            {/* Issued Credentials Info */}
-            <div className="w-full rounded-xl bg-slate-950 border border-slate-800 p-4 mb-6 text-left font-mono text-xs">
-              <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 text-[11px] text-slate-500">
-                <span>SESSION CRYPTOGRAPHIC ATTESTATION</span>
-                <span className="text-emerald-400">STATUS: VALID</span>
-              </div>
-              <div className="space-y-1.5 text-slate-300 text-[11px]">
-                <p><strong>Enclave Hardware Key:</strong> <span className="text-cyan-300">TPM_ENCLAVE_NITHYA_0x7FA9</span></p>
-                <p><strong>Session Nonce (32B):</strong> <span className="text-amber-300">{adaptiveEngine.getSessionNonce()}</span></p>
-                <p><strong>Access Scope:</strong> <span className="text-purple-300">["banking_transfers", "medical_vault", "identity_portal"]</span></p>
-              </div>
+            <div className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3.5 mb-6 text-left font-mono text-xs space-y-1.5 text-slate-300">
+              <p><strong>Enclave Key:</strong> <span className="text-cyan-300">TPM_ENCLAVE_NITHYA_0x7FA9</span></p>
+              <p><strong>Session Nonce:</strong> <span className="text-amber-300">{adaptiveEngine.getSessionNonce()}</span></p>
+              <p><strong>Hardware Level:</strong> <span className="text-emerald-400">FIDO2 L3 Attestation</span></p>
             </div>
 
             <button
               onClick={handleLogout}
-              className="px-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs border border-slate-700 hover:border-cyan-500/40 transition-all"
+              className="px-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs border border-slate-700 transition-all"
             >
-              Lock Enclave & Return
+              Lock Session & Return
             </button>
           </div>
         ) : (
-          <>
-            {/* Active Content Body */}
-            <div className="flex-1">
-              {(activeTab === 'auditory' || activeTab === 'cognitive' || activeTab === 'eye') && (
-                <AdaptiveLoginForm
-                  onSuccess={handleAuthSuccess}
-                  voiceEnabled={voiceEnabled}
-                />
-              )}
-
-              {activeTab === 'attacker' && (
-                <AttackerDashboard
-                  voiceEnabled={voiceEnabled}
-                  onLockoutTriggered={() => setIsLockedOut(true)}
-                />
-              )}
-
-              {activeTab === 'guardian' && (
-                <GuardianRecovery
-                  voiceEnabled={voiceEnabled}
-                  onRecovered={() => {
-                    setIsLockedOut(false);
-                    cryptoEngine.resetLockout();
-                  }}
-                />
-              )}
-
-              {activeTab === 'architecture' && <ArchitectureModal />}
-            </div>
-          </>
+          /* The Single Unified Login Page */
+          <UnifiedLogin
+            onSuccess={handleAuthSuccess}
+            onOpenAttackerSim={() => setActiveModal('attacker')}
+            onOpenArchitecture={() => setActiveModal('architecture')}
+            onOpenGuardian={() => setActiveModal('guardian')}
+          />
         )}
-
-        {/* Live Cryptographic Telemetry Drawer at Bottom */}
-        <section className="rounded-2xl bg-slate-950/70 border border-slate-800/80 p-4 mt-auto">
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800/80 text-[11px] font-mono text-slate-400">
-            <span className="flex items-center gap-2">
-              <Activity className="w-3.5 h-3.5 text-cyan-400" />
-              LIVE ADAPTIVE TELEMETRY & AUDIT STREAM
-            </span>
-            <span>REAL-TIME SENSOR METRICS</span>
-          </div>
-
-          <div className="space-y-1.5 font-mono text-xs">
-            {recentLogs.length === 0 ? (
-              <p className="text-slate-600 text-[11px]">Enclave active. Awaiting first authentication attempt...</p>
-            ) : (
-              recentLogs.map((log) => (
-                <div key={log.id} className="flex flex-col sm:flex-row sm:items-center justify-between text-[11px] gap-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-500">[{log.timestamp}]</span>
-                    <span
-                      className={`px-1.5 py-0.2 rounded font-bold ${
-                        log.type === 'SUCCESS'
-                          ? 'bg-emerald-950 text-emerald-400'
-                          : log.type === 'REJECTED'
-                          ? 'bg-rose-950 text-rose-400'
-                          : log.type === 'WARNING'
-                          ? 'bg-amber-950 text-amber-400'
-                          : 'bg-cyan-950 text-cyan-400'
-                      }`}
-                    >
-                      {log.type}
-                    </span>
-                    <span className="text-slate-300 font-semibold">{log.event}</span>
-                  </div>
-                  <span className="text-slate-500 truncate max-w-md">{log.details}</span>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
 
       </main>
 
+      {/* Slide-over / Modal for Judges Tools (Only displays when clicked!) */}
+      {activeModal !== 'none' && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-800 rounded-3xl p-6 relative shadow-2xl">
+            <button
+              onClick={() => setActiveModal('none')}
+              className="absolute top-5 right-5 p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-all"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {activeModal === 'attacker' && (
+              <AttackerDashboard
+                voiceEnabled={true}
+                onLockoutTriggered={() => setActiveModal('guardian')}
+              />
+            )}
+
+            {activeModal === 'architecture' && <ArchitectureModal />}
+
+            {activeModal === 'guardian' && (
+              <GuardianRecovery
+                voiceEnabled={true}
+                onRecovered={() => setActiveModal('none')}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Footer */}
-      <footer className="border-t border-slate-900 bg-slate-950 px-4 py-3 text-center text-xs text-slate-600 font-mono">
-        NeuroPass · Developed for HACKNEXT'26 PS05 • CYBERSECURITY · SNS College of Technology · Adaptive Zero-Knowledge Authentication
+      <footer className="border-t border-slate-900 bg-slate-950 px-6 py-3 text-center text-xs text-slate-600 font-mono flex flex-col sm:flex-row items-center justify-between gap-2">
+        <span>AccessAuth · HACKNEXT'26 PS05 • CYBERSECURITY · SNS College of Technology</span>
+        <div className="flex items-center gap-1.5 text-slate-500 text-[11px]">
+          <Activity className="w-3 h-3 text-emerald-400" />
+          <span>FIDO2 / WebAuthn Active</span>
+        </div>
       </footer>
     </div>
   );
