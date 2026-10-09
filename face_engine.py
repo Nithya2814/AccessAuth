@@ -1,7 +1,16 @@
-# face_engine.py - Pure PIL & NumPy Robust Biometric Engine with Lighting Detection
+# face_engine.py - Pure PIL, NumPy & OpenCV Robust Biometric Engine with Circle Face Validation
 import json
 import numpy as np
 from PIL import Image, ImageOps
+
+# Initialize OpenCV Haar Cascade Face Detector if available
+cv2_cascade = None
+try:
+    import cv2
+    haar_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+    cv2_cascade = cv2.CascadeClassifier(haar_path)
+except Exception:
+    cv2_cascade = None
 
 def check_lighting(image_bytes, threshold: float = 65.0) -> tuple:
     """
@@ -81,104 +90,188 @@ def compare_faces(stored_feature_json: str, live_image_bytes, threshold: float =
 
 def analyze_face_spatial_guidance(image_bytes) -> dict:
     """
-    Analyzes live camera capture for face presence, centering (left/right balance), and distance.
-    Returns:
-    {
-        "status": "CENTERED" | "MOVE_LEFT" | "MOVE_RIGHT" | "MOVE_CLOSER" | "TOO_DARK" | "NO_FACE",
-        "guidance_en": str,
-        "is_ready": bool
-    }
+    Analyzes live camera capture using OpenCV colorimetry, contours, and geometry.
+    Verifies human face presence inside the viewfinder circle and rejects non-face/empty photos.
     """
     try:
-        pil_img = Image.open(image_bytes).convert("L")
-        width, height = pil_img.size
-        arr = np.array(pil_img, dtype=np.float32)
+        pil_rgb = Image.open(image_bytes).convert("RGB")
+        width, height = pil_rgb.size
         
-        # 1. Overall brightness
-        brightness = float(np.mean(arr))
-        if brightness < 40.0:
+        # 1. Overall brightness check
+        pil_l = ImageOps.grayscale(pil_rgb)
+        arr_gray = np.array(pil_l, dtype=np.float32)
+        brightness = float(np.mean(arr_gray))
+        if brightness < 38.0:
             return {
                 "status": "TOO_DARK",
                 "guidance_en": "Low lighting detected. Please turn on screen flash.",
                 "is_ready": False
             }
 
-        # 2. Divide into 3 vertical zones: Left, Center, Right
+        # 2. OpenCV Skin Chrominance (YCrCb) & Circular Viewfinder Validation
+        try:
+            import cv2
+            np_frame = np.array(pil_rgb)
+            # Universal human skin detection in YCrCb chrominance space
+            ycrcb = cv2.cvtColor(np_frame, cv2.COLOR_RGB2YCrCb)
+            lower_skin = np.array([0, 133, 77], dtype=np.uint8)
+            upper_skin = np.array([255, 175, 128], dtype=np.uint8)
+            skin_mask = cv2.inRange(ycrcb, lower_skin, upper_skin)
+            
+            # Morphological smoothing to remove noise
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+            skin_mask = cv2.morphologyEx(skin_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+            skin_mask = cv2.morphologyEx(skin_mask, cv2.MORPH_OPEN, kernel, iterations=1)
+            
+            # Target circle definition: center of the image, radius 38% of min dimension
+            center_x = width // 2
+            center_y = height // 2
+            radius = int(min(width, height) * 0.38)
+            
+            circle_mask = np.zeros((height, width), dtype=np.uint8)
+            cv2.circle(circle_mask, (center_x, center_y), radius, 255, -1)
+            
+            # Skin pixels inside target circle
+            skin_in_circle = cv2.bitwise_and(skin_mask, skin_mask, mask=circle_mask)
+            skin_pixels_in_circle = int(np.sum(skin_in_circle > 0))
+            circle_area = int(np.pi * (radius ** 2))
+            skin_circle_ratio = skin_pixels_in_circle / max(1, circle_area)
+            
+            # Find skin contours
+            contours, _ = cv2.findContours(skin_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            valid_face_contour = None
+            max_area = 0
+            min_face_area = int(width * height * 0.04)
+            
+            for cnt in contours:
+                area = cv2.contourArea(cnt)
+                if area > min_face_area and area > max_area:
+                    max_area = area
+                    valid_face_contour = cnt
+            
+            # If no skin contour found or skin ratio in circle < 10%, reject as NO_FACE
+            if valid_face_contour is None or skin_circle_ratio < 0.10:
+                # Secondary check using luminance variance
+                w_third = width // 3
+                center_zone = arr_gray[:, w_third: 2 * w_third]
+                if float(np.var(center_zone)) < 160.0 or skin_circle_ratio < 0.05:
+                    return {
+                        "status": "NO_FACE",
+                        "guidance_en": "No face detected inside the circle. Please face the camera directly.",
+                        "is_ready": False
+                    }
+
+            # If contour exists, check its spatial centering
+            if valid_face_contour is not None:
+                M = cv2.moments(valid_face_contour)
+                if M["m00"] > 0:
+                    cx = M["m10"] / M["m00"]
+                else:
+                    x, y, w, h = cv2.boundingRect(valid_face_contour)
+                    cx = x + w / 2
+                x, y, w, h = cv2.boundingRect(valid_face_contour)
+                
+                # Spatial guidance relative to circle
+                if cx < width * 0.33:
+                    return {
+                        "status": "MOVE_RIGHT",
+                        "guidance_en": "Move slightly to your right inside the circle.",
+                        "is_ready": False
+                    }
+                elif cx > width * 0.67:
+                    return {
+                        "status": "MOVE_LEFT",
+                        "guidance_en": "Move slightly to your left inside the circle.",
+                        "is_ready": False
+                    }
+                elif w < width * 0.20 or h < height * 0.20:
+                    return {
+                        "status": "MOVE_CLOSER",
+                        "guidance_en": "Please move closer to the camera inside the circle.",
+                        "is_ready": False
+                    }
+
+            return {
+                "status": "CENTERED",
+                "guidance_en": "Face detected inside circle. Ready to authenticate.",
+                "is_ready": True
+            }
+        except Exception:
+            pass
+
+        # 3. Robust NumPy Spatial Variance Fallback
         w_third = width // 3
-        left_zone = arr[:, :w_third]
-        center_zone = arr[:, w_third: 2 * w_third]
-        right_zone = arr[:, 2 * w_third:]
+        left_zone = arr_gray[:, :w_third]
+        center_zone = arr_gray[:, w_third: 2 * w_third]
+        right_zone = arr_gray[:, 2 * w_third:]
 
         var_left = float(np.var(left_zone))
         var_center = float(np.var(center_zone))
         var_right = float(np.var(right_zone))
         total_var = var_left + var_center + var_right + 1e-5
 
-        # 3. Check if face/subject is present
-        if total_var < 150.0:
+        if var_center < 120.0 or total_var < 350.0:
             return {
                 "status": "NO_FACE",
-                "guidance_en": "No face detected. Please face the camera directly.",
+                "guidance_en": "No face detected inside the circle. Please face the camera directly.",
                 "is_ready": False
             }
 
-        # 4. Spatial Centering Balance
         left_ratio = var_left / total_var
         right_ratio = var_right / total_var
 
         if left_ratio > 0.52:
             return {
                 "status": "MOVE_RIGHT",
-                "guidance_en": "Move slightly to your right.",
+                "guidance_en": "Move slightly to your right inside the circle.",
                 "is_ready": False
             }
         elif right_ratio > 0.52:
             return {
                 "status": "MOVE_LEFT",
-                "guidance_en": "Move slightly to your left.",
+                "guidance_en": "Move slightly to your left inside the circle.",
                 "is_ready": False
             }
         
-        # 5. Check distance
         center_ratio = var_center / (total_var / 3.0)
-        if center_ratio < 0.65:
+        if center_ratio < 0.70:
             return {
                 "status": "MOVE_CLOSER",
-                "guidance_en": "Please move closer to the camera.",
+                "guidance_en": "Please move closer to the camera inside the circle.",
                 "is_ready": False
             }
 
         return {
             "status": "CENTERED",
-            "guidance_en": "Face centered and clear. Ready to verify.",
+            "guidance_en": "Face detected inside circle. Ready to authenticate.",
             "is_ready": True
         }
 
     except Exception:
         return {
-            "status": "CENTERED",
-            "guidance_en": "Face captured. Ready to verify.",
-            "is_ready": True
+            "status": "NO_FACE",
+            "guidance_en": "No face detected inside the circle. Please face the camera directly.",
+            "is_ready": False
         }
 
 def get_spatial_voice_text(status: str, lang: str = "English") -> str:
     """Localized voice guidance prompts for all 10 languages."""
     messages = {
         "English": {
-            "CENTERED": "Face centered and clear. Ready to authenticate.",
-            "MOVE_RIGHT": "Move slightly to your right.",
-            "MOVE_LEFT": "Move slightly to your left.",
-            "MOVE_CLOSER": "Please move closer to the camera.",
+            "CENTERED": "Face detected inside circle. Ready to authenticate.",
+            "MOVE_RIGHT": "Move slightly to your right inside the circle.",
+            "MOVE_LEFT": "Move slightly to your left inside the circle.",
+            "MOVE_CLOSER": "Please move closer to the camera inside the circle.",
             "TOO_DARK": "Low lighting. Please turn on screen flash.",
-            "NO_FACE": "No face detected. Please face the camera."
+            "NO_FACE": "No face detected inside the circle. Please face the camera directly."
         },
         "Tamil": {
-            "CENTERED": "முகம் நடுவில் உள்ளது. சரிபார்க்க தயார்.",
-            "MOVE_RIGHT": "சற்று வலதுபுறம் நகருங்கள்.",
-            "MOVE_LEFT": "சற்று இடதுபுறம் நகருங்கள்.",
-            "MOVE_CLOSER": "கேமராவுக்கு சற்று அருகில் வரவும்.",
+            "CENTERED": "வட்டத்திற்குள் முகம் கண்டறியப்பட்டது. சரிபார்க்க தயார்.",
+            "MOVE_RIGHT": "சற்று வலதுபுறம் நகர்ந்து வட்டத்திற்குள் வரவும்.",
+            "MOVE_LEFT": "சற்று இடதுபுறம் நகர்ந்து வட்டத்திற்குள் வரவும்.",
+            "MOVE_CLOSER": "வட்டத்திற்குள் சற்று அருகில் வரவும்.",
             "TOO_DARK": "வெளிச்சம் குறைவாக உள்ளது. ஃபிளாஷ் ஆன் செய்யவும்.",
-            "NO_FACE": "முகம் தெரியவில்லை. கேமராவை நேராக பார்க்கவும்."
+            "NO_FACE": "வட்டத்திற்குள் முகம் கண்டறியப்படவில்லை. தயவுசெய்து உங்கள் முகத்தை வட்டத்திற்குள் வைக்கவும்."
         },
         "Hindi": {
             "CENTERED": "चेहरा केंद्र में है। प्रमाणीकरण के लिए तैयार।",
