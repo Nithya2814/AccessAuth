@@ -3,14 +3,29 @@ import json
 import numpy as np
 from PIL import Image, ImageOps
 
-# Initialize OpenCV Haar Cascade Face Detector if available
+# Initialize OpenCV Haar Cascade Face Detector if available (with local XML models)
+import os
+base_dir = os.path.dirname(os.path.abspath(__file__))
+haar_face_xml = os.path.join(base_dir, "haarcascade_frontalface_default.xml")
+haar_eye_xml = os.path.join(base_dir, "haarcascade_eye.xml")
+
 cv2_cascade = None
+eye_cascade = None
 try:
     import cv2
-    haar_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-    cv2_cascade = cv2.CascadeClassifier(haar_path)
+    if hasattr(cv2, "CascadeClassifier"):
+        if os.path.exists(haar_face_xml):
+            cv2_cascade = cv2.CascadeClassifier(haar_face_xml)
+        elif hasattr(cv2, "data") and hasattr(cv2.data, "haarcascades"):
+            cv2_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+            
+        if os.path.exists(haar_eye_xml):
+            eye_cascade = cv2.CascadeClassifier(haar_eye_xml)
+        elif hasattr(cv2, "data") and hasattr(cv2.data, "haarcascades"):
+            eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_eye.xml")
 except Exception:
     cv2_cascade = None
+    eye_cascade = None
 
 def check_lighting(image_bytes, threshold: float = 65.0) -> tuple:
     """
@@ -108,10 +123,44 @@ def analyze_face_spatial_guidance(image_bytes) -> dict:
                 "is_ready": False
             }
 
-        # 2. OpenCV Skin Chrominance (YCrCb) & Circular Viewfinder Validation
+        # 2. OpenCV Multi-Layer Biometric Verification (Haar Cascade + YCrCb Chrominance)
         try:
             import cv2
             np_frame = np.array(pil_rgb)
+
+            # Check Haar Cascade first if classifier model is available
+            if cv2_cascade is not None:
+                try:
+                    gray_frame = cv2.cvtColor(np_frame, cv2.COLOR_RGB2GRAY)
+                    haar_faces = cv2_cascade.detectMultiScale(
+                        gray_frame, 
+                        scaleFactor=1.15, 
+                        minNeighbors=4, 
+                        minSize=(int(min(width, height) * 0.2), int(min(width, height) * 0.2))
+                    )
+                    if len(haar_faces) > 0:
+                        hx, hy, hw, hh = max(haar_faces, key=lambda b: b[2] * b[3])
+                        hcx = hx + hw / 2
+                        hcy = hy + hh / 2
+                        if hcx < width * 0.36:
+                            return {"status": "MOVE_RIGHT", "guidance_en": "Move slightly to your right inside the circle.", "is_ready": False}
+                        elif hcx > width * 0.64:
+                            return {"status": "MOVE_LEFT", "guidance_en": "Move slightly to your left inside the circle.", "is_ready": False}
+                        if hcy < height * 0.30:
+                            return {"status": "MOVE_DOWN", "guidance_en": "Move slightly down inside the circle.", "is_ready": False}
+                        elif hcy > height * 0.70:
+                            return {"status": "MOVE_UP", "guidance_en": "Move slightly up inside the circle.", "is_ready": False}
+                        if hw < width * 0.20 or hh < height * 0.20:
+                            return {"status": "MOVE_CLOSER", "guidance_en": "Please move closer to the camera inside the circle.", "is_ready": False}
+                        if eye_cascade is not None:
+                            roi_gray = gray_frame[hy:hy + int(hh * 0.6), hx:hx + hw]
+                            eyes = eye_cascade.detectMultiScale(roi_gray, scaleFactor=1.1, minNeighbors=3)
+                            if len(eyes) == 1:
+                                return {"status": "LOOK_STRAIGHT", "guidance_en": "Please look straight into the camera inside the circle.", "is_ready": False}
+                        return {"status": "CENTERED", "guidance_en": "Face and eyes centered inside circle. You are inside the frame. You can now take photo, press Enter or Space.", "is_ready": True}
+                except Exception:
+                    pass
+
             # Universal human skin detection in YCrCb chrominance space
             ycrcb = cv2.cvtColor(np_frame, cv2.COLOR_RGB2YCrCb)
             lower_skin = np.array([0, 133, 77], dtype=np.uint8)

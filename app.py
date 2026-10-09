@@ -108,92 +108,40 @@ st.set_page_config(
 # Initialize database
 db.init_db()
 
-# Safe Dictionary wrapper that NEVER raises KeyError
+# Safe Dictionary wrapper that NEVER raises KeyError and always resolves active language
 class SafeDict(dict):
     def __getitem__(self, key):
         if key in self:
             return super().__getitem__(key)
-        # Fallback to English
+        cur_lang = st.session_state.get("lang", "English")
+        lang_dict = TRANSLATIONS.get(cur_lang, {})
+        if key in lang_dict:
+            return lang_dict[key]
         eng = TRANSLATIONS.get("English", {})
         if key in eng:
             return eng[key]
-        fallbacks = {
-            "sidebar_lang_label": "Language",
-            "sidebar_theme_label": "Theme",
-            "sidebar_theme_dark": "Dark",
-            "sidebar_theme_light": "Light",
-            "sidebar_font_label": "Text Size",
-            "sidebar_font_help": "Adjust font size for easy reading",
-            "blind_mode_title": "Blind Assist Mode Active",
-            "blind_mode_subtitle": "Voice Guidance • Eyes-Free Face Login • High Contrast",
-            "blind_welcome_speech": {
-                "English": "Blind Assist Mode active. Voice guidance enabled. Press Tab to hear options, or use One-Tap Face Biometric Login without typing.",
-                "Tamil": "பார்வை மாற்றுத்திறனாளி முறை செயல்படுத்தப்பட்டுள்ளது. ஆடியோ வழிகாட்டுதல் தயார். தட்டச்சு செய்யாமல் முக பயோமெட்ரிக் உள்நுழைவு அல்லது ஆடியோ பாதுகாப்பு சோதனையைப் பயன்படுத்தலாம்.",
-                "Hindi": "ब्लाइंड असिस्ट मोड सक्रिय है। ऑडियो मार्गदर्शन तैयार है। आप बिना टाइप किए वन-टैप फेस बायोमेट्रिक लॉगिन का उपयोग कर सकते हैं।",
-                "Telugu": "బ్లైండ్ అసిస్ట్ మోడ్ యాక్టివ్ చేయబడింది. ఆడియో మార్గదర్శకత్వం సిద్ధంగా ఉంది. టైప్ చేయకుండా వన్-ట్యాప్ ఫేస్ బయోమెట్రిక్ లాగిన్ ఉపయోగించవచ్చు.",
-                "Kannada": "ಅಂಧರ ಸಹಾಯ ಮೋಡ್ ಸಕ್ರಿಯಗೊಂಡಿದೆ. ಧ್ವನಿ ಮಾರ್ಗದರ್ಶನ ಸಿದ್ಧವಾಗಿದೆ. ಟೈಪ್ ಮಾಡದೆಯೇ ಒನ್-ಟ್ಯಾಪ್ ಫೇಸ್ ಲಾಗಿನ್ ಬಳಸಬಹುದು.",
-                "Malayalam": "ബ്ലൈൻഡ് അസിസ്റ്റ് മോഡ് സജീവമാക്കി. വോയ്‌സ് മാർഗ്ഗനിർദ്ദേശം തയ്യാറാണ്. ടൈപ്പ് ചെയ്യാതെ ഫേസ് ലോഗിൻ ഉപയോഗിക്കാം.",
-                "Bengali": "ব্লাইন্ড অ্যাসিস্ট মোড সক্রিয় করা হয়েছে। ভয়েস নির্দেশিকা প্রস্তুত। টাইপ না করে ফেস লগইন ব্যবহার করতে পারেন।",
-                "Marathi": "ब्लाइंड असिस्ट मोड सक्रिय आहे. ऑडिओ मार्गदर्शन तयार आहे. टाईप न करता वन-टॅप फेस लॉगिन वापरू शकता.",
-                "Spanish": "Modo de Asistencia para Ciegos activado. Guía de voz habilitada. Puede iniciar sesión con reconocimiento facial con un toque sin escribir.",
-                "French": "Mode d'assistance visuelle activé. Guidage vocal prêt. Vous pouvez utiliser la connexion faciale en un clic sans taper."
-            }.get(st.session_state.get("lang", "English"), "Blind Assist Mode active. Voice guidance enabled. Press Tab to hear options."),
-            "audio_challenge_prompt": {
-                "English": "Security Audio Challenge. Please listen to the audio pulses. How many pulses did you hear?",
-                "Tamil": "பாதுகாப்பு ஆடியோ சோதனை. ஒலி துடிப்புகளை கவனமாகக் கேளுங்கள். எத்தனை துடிப்புகள் கேட்டன?",
-                "Hindi": "सुरक्षा ऑडियो चुनौती। कृपया ऑडियो पल्स सुनें। आपने कितनी पल्स सुनीं?",
-                "Telugu": "భద్రతా ఆడియో ఛాలెంజ్. దయచేసి ఆడియో పల్స్‌లను వినండి. మీరు ఎన్ని పల్స్‌లను విన్నారు?",
-                "Kannada": "ಸುರಕ್ಷತಾ ಆಡಿಯೋ ಸವಾಲು. ದಯವಿಟ್ಟು ಆಡಿಯೋ ನಾಡಿಮಿಡಿತಗಳನ್ನು ಆಲಿಸಿ. ನೀವು ಎಷ್ಟು ಸದ್ದುಗಳನ್ನು ಕೇಳಿದ್ದೀರಿ?",
-                "Malayalam": "സുരക്ഷാ ഓഡിയോ വെല്ലുവിളി. ഓഡിയോ പൾസുകൾ ശ്രദ്ധിക്കുക. എത്ര പൾസുകൾ കേട്ടു?",
-                "Bengali": "নিরাপত্তা অডিও চ্যালেঞ্জ। অডিও ডাল শুনুন। আপনি কয়টি ডাল শুনেছেন?",
-                "Marathi": "सुरक्षा ऑडिओ आव्हान. कृपया ऑडिओ स्पंदने ऐका. तुम्ही किती स्पंदने ऐकली?",
-                "Spanish": "Desafío de seguridad de audio. Escuche los pulsos de audio. ¿Cuántos pulsos escuchó?",
-                "French": "Défi de sécurité audio. Écoutez les impulsions audio. Combien d'impulsions avez-vous entendues?"
-            }.get(st.session_state.get("lang", "English"), "Security Audio Challenge. Please listen to the audio pulses. How many pulses did you hear?"),
-            "audio_challenge_pass": {
-                "English": "Audio security challenge verified successfully! Human verified.",
-                "Tamil": "ஆடியோ பாதுகாப்பு சோதனை வெற்றிகரமாக சரிபார்க்கப்பட்டது! மனித பயனர் உறுதிசெய்யப்பட்டார்.",
-                "Hindi": "ऑडियो सुरक्षा चुनौती सत्यापित! मानव उपयोगकर्ता की पुष्टि हुई।",
-                "Telugu": "ఆడియో సెక్యూరిటీ ఛాలెంజ్ ధృవీకరించబడింది! మానవుడు ధృవీకరించబడ్డాడు.",
-                "Kannada": "ಆಡಿಯೋ ಭದ್ರತಾ ಸವಾಲು ಯಶಸ್ವಿಯಾಗಿ ಪರಿಶೀಲಿಸಲ್ಪಟ್ಟಿದೆ!",
-                "Malayalam": "ഓഡിയോ സുരക്ഷാ വെല്ലുവിളി വിജയകരമായി സ്ഥിರീകരിച്ചു!",
-                "Bengali": "অডিও নিরাপত্তা চ্যালেঞ্জ সফলভাবে যাচাই করা হয়েছে!",
-                "Marathi": "ऑडिओ सुरक्षा आव्हान यशस्वीरित्या सत्यापित झाले!",
-                "Spanish": "Desafío de seguridad de audio verificado con éxito.",
-                "French": "Défi de sécurité audio vérifié avec succès."
-            }.get(st.session_state.get("lang", "English"), "Audio security challenge verified successfully! Human verified."),
-            "login_google": {
-                "English": "Sign in with Google",
-                "Tamil": "Google மூலம் உள்நுழைக",
-                "Hindi": "Google के साथ साइन इन करें",
-                "Telugu": "Googleతో సైన్ ఇన్ చేయండి",
-                "Kannada": "Google ನೊಂದಿಗೆ ಸೈನ್ ಇನ್ ಮಾಡಿ",
-                "Malayalam": "Google വഴി പ്രവേശിക്കുക",
-                "Bengali": "Google দিয়ে সাইন ইন করুন",
-                "Marathi": "Google सह साइन इन करा",
-                "Spanish": "Iniciar sesión con Google",
-                "French": "Se connecter avec Google"
-            }.get(st.session_state.get("lang", "English"), "Sign in with Google"),
-            "stop_btn": {
-                "English": "⏹️ Stop Audio",
-                "Tamil": "⏹️ ஆடியோவை நிறுத்து",
-                "Hindi": "⏹️ ऑडियो बंद करें",
-                "Telugu": "⏹️ ఆడియో ఆపు",
-                "Kannada": "⏹️ ಆಡಿಯೋ ನಿಲ್ಲಿಸಿ",
-                "Malayalam": "⏹️ ഓഡിയോ നിർത്തുക",
-                "Bengali": "⏹️ অডিও বন্ধ করুন",
-                "Marathi": "⏹️ ऑडिओ थांबवा",
-                "Spanish": "⏹️ Detener Audio",
-                "French": "⏹️ Arrêter l'Audio"
-            }.get(st.session_state.get("lang", "English"), "⏹️ Stop Audio")
-        }
-        return fallbacks.get(key, str(key))
+        return str(key)
 
 # ----------------- SESSION STATE & CONFIG -----------------
 AVAILABLE_LANGUAGES = [
     "English", "Tamil", "Hindi", "Telugu", "Kannada", 
     "Malayalam", "Bengali", "Marathi", "Spanish", "French"
 ]
+
+LANGUAGE_DISPLAY = {
+    "English": "English",
+    "Tamil": "தமிழ் - Tamil",
+    "Hindi": "हिन्दी - Hindi",
+    "Telugu": "తెలుగు - Telugu",
+    "Kannada": "ಕನ್ನಡ - Kannada",
+    "Malayalam": "മലയാളം - Malayalam",
+    "Bengali": "বাংলা - Bengali",
+    "Marathi": "मराठी - Marathi",
+    "Spanish": "Español - Spanish",
+    "French": "Français - French"
+}
+DISPLAY_TO_LANG = {v: k for k, v in LANGUAGE_DISPLAY.items()}
+
 FONT_OPTIONS = [
     "Standard", 
     "Large", 
@@ -752,14 +700,17 @@ st.markdown(f"""
 
 # ----------------- SIDEBAR CONTROLS (UNILINGUAL) -----------------
 with st.sidebar:
-    # 1. LANGUAGE SELECTOR (10 Languages in English)
+    # 1. LANGUAGE SELECTOR (10 Languages with Native Script)
     st.subheader(f"🌐 {t['sidebar_lang_label']}")
-    selected_lang = st.selectbox(
+    disp_options = [LANGUAGE_DISPLAY[l] for l in AVAILABLE_LANGUAGES]
+    cur_disp = LANGUAGE_DISPLAY.get(st.session_state.lang, "English")
+    selected_disp = st.selectbox(
         t["sidebar_lang_label"],
-        options=AVAILABLE_LANGUAGES,
-        index=AVAILABLE_LANGUAGES.index(st.session_state.lang) if st.session_state.lang in AVAILABLE_LANGUAGES else 0,
+        options=disp_options,
+        index=disp_options.index(cur_disp) if cur_disp in disp_options else 0,
         label_visibility="collapsed"
     )
+    selected_lang = DISPLAY_TO_LANG.get(selected_disp, "English")
     if selected_lang != st.session_state.lang:
         st.session_state.lang = selected_lang
         if st.session_state.access_mode == "Blind Assist Mode":
@@ -768,17 +719,26 @@ with st.sidebar:
 
     st.markdown("---")
     # 2. ACCESSIBILITY MODE SELECTOR
-    st.subheader("🛡️ Accessibility Mode")
-    selected_access = st.radio(
-        "Accessibility Mode",
-        options=ACCESSIBILITY_MODES,
-        index=ACCESSIBILITY_MODES.index(st.session_state.access_mode) if st.session_state.access_mode in ACCESSIBILITY_MODES else 0,
+    st.subheader(f"🛡️ {t['sidebar_access_label']}")
+    mode_map = {
+        "Blind Assist Mode": f"👁️ {t['mode_blind']}",
+        "Standard Mode": f"👤 {t['mode_standard']}",
+        "Dyslexia Mode": f"🔤 {t['mode_dyslexia']}"
+    }
+    inv_mode_map = {v: k for k, v in mode_map.items()}
+    mode_options = [mode_map["Blind Assist Mode"], mode_map["Standard Mode"], mode_map["Dyslexia Mode"]]
+    cur_mode_disp = mode_map.get(st.session_state.access_mode, mode_options[0])
+    selected_mode_disp = st.radio(
+        t["sidebar_access_label"],
+        options=mode_options,
+        index=mode_options.index(cur_mode_disp) if cur_mode_disp in mode_options else 0,
         key="sidebar_access_mode_radio",
         label_visibility="collapsed"
     )
-    if selected_access != st.session_state.access_mode:
-        st.session_state.access_mode = selected_access
-        if selected_access == "Blind Assist Mode":
+    new_mode = inv_mode_map.get(selected_mode_disp, "Blind Assist Mode")
+    if new_mode != st.session_state.access_mode:
+        st.session_state.access_mode = new_mode
+        if new_mode == "Blind Assist Mode":
             st.session_state.should_announce_blind = True
         st.rerun()
 
@@ -1025,6 +985,27 @@ if st.session_state.access_mode == "Blind Assist Mode":
         st.session_state.should_announce_blind = False
         play_speech(t["blind_welcome_speech"], st.session_state.lang)
 
+# ----------------- TOP ACCESSIBLE LANGUAGE SELECTOR -----------------
+top_c1, top_c2 = st.columns([1.5, 4.5])
+with top_c1:
+    st.markdown(f"<span style='font-weight: 700; font-size: 0.95rem; color: {sub_color};'>🌐 {t['quick_lang_label']}:</span>", unsafe_allow_html=True)
+with top_c2:
+    top_disp_options = [LANGUAGE_DISPLAY[l] for l in AVAILABLE_LANGUAGES]
+    top_cur_disp = LANGUAGE_DISPLAY.get(st.session_state.lang, "English")
+    top_selected_disp = st.selectbox(
+        t["quick_lang_label"],
+        options=top_disp_options,
+        index=top_disp_options.index(top_cur_disp) if top_cur_disp in top_disp_options else 0,
+        label_visibility="collapsed",
+        key="top_quick_language_select"
+    )
+    top_selected_lang = DISPLAY_TO_LANG.get(top_selected_disp, "English")
+    if top_selected_lang != st.session_state.lang:
+        st.session_state.lang = top_selected_lang
+        if st.session_state.access_mode == "Blind Assist Mode":
+            st.session_state.should_announce_blind = True
+        st.rerun()
+
 # ----------------- MAIN TITLE HEADER -----------------
 st.markdown(f"""
 <div class="app-header">
@@ -1038,18 +1019,18 @@ if st.session_state.access_mode == "Dyslexia Mode":
     st.markdown(f"""
     <div style="background-color: {card_bg}; border: 1.5px solid #2563eb; border-radius: 12px; padding: 14px 20px; margin: 10px 0 18px 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
         <div>
-            <strong style="color: #2563eb; font-size: 1.05rem;">🔤 Dyslexia Mode Active</strong>
-            <div style="font-size: 0.9rem; color: {sub_color}; margin-top: 3px;">Lexend Typography • Wide Letter Spacing • Warm Contrast Tint</div>
+            <strong style="color: #2563eb; font-size: 1.05rem;">🔤 {t['dyslexia_banner_title']}</strong>
+            <div style="font-size: 0.9rem; color: {sub_color}; margin-top: 3px;">{t['dyslexia_banner_sub']}</div>
         </div>
         <div>
-            <span class="status-pill pill-green">High Readability Enabled</span>
+            <span class="status-pill pill-green">{t['dyslexia_banner_badge']}</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
 # ----------------- LOGGED IN DASHBOARD -----------------
 if st.session_state.logged_in_user:
     user = st.session_state.logged_in_user
-    st.success(f"🎉 **{user['fullname']}**, you have successfully logged in!")
+    st.success(f"🎉 **{user['fullname']}**, {t['auth_success_banner']}")
     
     is_google = (user.get("provider") == "Google SSO OAuth 2.0")
     if is_google:
@@ -1067,21 +1048,21 @@ if st.session_state.logged_in_user:
     st.markdown(f"""
     <div class="adaptive-card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <h4 style="margin: 0;">👤 Account Verified</h4>
+            <h4 style="margin: 0;">👤 {t['logged_in_card_title']}</h4>
             {auth_badge}
         </div>
-        <p>• <strong>Full Name:</strong> {user['fullname']}<br>
-        • <strong>Email:</strong> {user['email']}<br>
-        • <strong>Phone:</strong> {user.get('phone', '+91 98765-XXXXX')}<br>
+        <p>• <strong>{t['fullname']}:</strong> {user['fullname']}<br>
+        • <strong>{t['email']}:</strong> {user['email']}<br>
+        • <strong>{t['phone']}:</strong> {user.get('phone', '+91 98765-XXXXX')}<br>
         • <strong>Authentication Method:</strong> {method_desc}<br>
         • <strong>Security Protocol:</strong> {token_info}<br>
         • <strong>Zero Trust Risk Score:</strong> {zt_score}/100 • Low Risk Frictionless<br>
         • <strong>Hardware Device Fingerprint:</strong> Verified {fp_prefix}<br>
-        • <strong>Cryptographic Audit Trail:</strong> Event logged to Security Telemetry Engine</p>
+        • <strong>{t['audit_trail_text']}</strong></p>
     </div>
     """, unsafe_allow_html=True)
     
-    if st.button("🚪 Log Out", type="secondary"):
+    if st.button(f"🚪 {t['logout_btn']}", type="secondary"):
         st.session_state.logged_in_user = None
         st.session_state.login_attempts = 0
         st.session_state.target_email_locked = None
@@ -1098,11 +1079,11 @@ if st.session_state.access_mode == "Blind Assist Mode":
     <div style="background-color: {card_bg}; border: 3px solid {'#f59e0b' if is_light else '#fbbf24'}; border-radius: 14px; padding: 18px 22px; margin: 8px 0 22px 0;">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
             <div>
-                <h3 style="margin: 0; color: {'#000000' if is_light else '#ffffff'};">👁️ Blind Assist Voice Console</h3>
-                <p style="margin: 4px 0 0 0; color: {sub_color}; font-size: 1.02rem;">Voice Guided • Eyes-Free Face Login • Acoustic Security Challenge</p>
+                <h3 style="margin: 0; color: {'#000000' if is_light else '#ffffff'};">👁️ {t['blind_console_title']}</h3>
+                <p style="margin: 4px 0 0 0; color: {sub_color}; font-size: 1.02rem;">{t['blind_console_sub']}</p>
             </div>
             <div style="margin-top: 6px;">
-                <span class="status-pill pill-green" style="font-size: 0.95rem;">🔊 Audio Guidance Active</span>
+                <span class="status-pill pill-green" style="font-size: 0.95rem;">🔊 {t['blind_badge_active']}</span>
             </div>
         </div>
     </div>
@@ -1113,39 +1094,27 @@ if st.session_state.access_mode == "Blind Assist Mode":
 
     # 1. ONE-TAP FACE BIOMETRIC LOGIN
     with st.container(border=True):
-        st.markdown("### 📸 Eyes-Free One-Tap Face Biometric Login")
-        st.write("Position your face inside the green circular viewfinder and take a photo. Our spatial voice engine will guide you automatically.")
+        st.markdown(f"### 📸 {t['blind_face_login_title']}")
+        st.write(t["blind_face_login_desc"])
         
         col_b_cam1, col_b_cam2 = st.columns([3, 1.4])
         with col_b_cam2:
-            flash_state = st.toggle("💡 Screen Flashlight", value=st.session_state.blind_flash_active, key="blind_flash_toggle")
+            flash_state = st.toggle(f"💡 {t['screen_flashlight_label']}", value=st.session_state.blind_flash_active, key="blind_flash_toggle")
             if flash_state != st.session_state.blind_flash_active:
                 st.session_state.blind_flash_active = flash_state
                 st.rerun()
 
-            voice_help_texts = {
-                "English": "Position your face directly towards your camera inside the circular guide and take a photo. If lighting is low, screen flashlight will illuminate automatically.",
-                "Tamil": "உங்கள் முகத்தை வட்டத்திற்குள் நேரடியாக காட்டி புகைப்படம் எடுக்கவும். வெளிச்சம் குறைவாக இருந்தால் ஸ்கிரீன் ஃபிளாஷ்லைட் தானாக ஆன் ஆகும்.",
-                "Hindi": "वृत्त के अंदर अपना चेहरा सीधे कैमरे की ओर रखें। यदि रोशनी कम है, तो स्क्रीन फ्लैशलाइट चालू हो जाएगी।",
-                "Telugu": "వృత్తం లోపల మీ ముఖాన్ని నేరుగా కెమెరా వైపు ఉంచి ఫోటో తీయండి. వెలుతురు తక్కువగా ఉంటే స్క్రీన్ ఫ్లాష్ ఆన్ అవుతుంది.",
-                "Kannada": "ವೃತ್ತದೊಳಗೆ ನಿಮ್ಮ ಮುಖವನ್ನು ನೇರವಾಗಿ ಕ್ಯಾಮೆರಾ ಕಡೆಗೆ ಇರಿಸಿ ಫೋಟೋ ತೆಗೆದುಕೊಳ್ಳಿ. ಬೆಳಕು ಕಡಿಮೆಯಿದ್ದರೆ ಸ್ಕ್ರೀನ್ ಫ್ಲ್ಯಾಶ್ ಆನ್ ಆಗುತ್ತದೆ.",
-                "Malayalam": "വൃത്തത്തിനുള്ളിൽ നിങ്ങളുടെ മുഖം നേരിട്ട് ക്യാമറയിലേക്ക് കാണിച്ച് ഫോട്ടോ എടുക്കുക. വെളിച്ചക്കുറവുണ്ടെങ്കിൽ സ്ക്രീൻ ഫ്ലാഷ് ഓണാകും.",
-                "Bengali": "বৃত্তের ভিতরে আপনার মুখটি সরাসরি ক্যামেরার দিকে রাখুন এবং ছবি তুলুন। আলো কম থাকলে স্ক্রিন ফ্ল্যাশলাইট চালু হবে।",
-                "Marathi": "वर्तुळाच्या आत तुमचा चेहरा थेट कॅमेऱ्यासमोर ठेवा. प्रकाश कमी असल्यास स्क्रीन फ्लॅशलाइट आपोआप सुरू होईल.",
-                "Spanish": "Coloque su rostro dentro del círculo guía hacia la cámara. Si hay poca luz, el flash de pantalla se encenderá automáticamente.",
-                "French": "Placez votre visage dans le repère circulaire vers la caméra. En cas de faible luminosité, le flash d'écran s'allume automatiquement."
-            }
-            if st.button("🔊 Voice Instructions", key="blind_voice_cam_btn", type="secondary", use_container_width=True):
-                play_speech(voice_help_texts.get(st.session_state.lang, voice_help_texts["English"]), st.session_state.lang)
+            if st.button(f"🔊 {t['voice_instructions_btn']}", key="blind_voice_cam_btn", type="secondary", use_container_width=True):
+                play_speech(t["cam_voice_instructions"], st.session_state.lang)
 
         with col_b_cam1:
             if st.session_state.blind_flash_active:
                 st.markdown('<div class="screen-flash-box">', unsafe_allow_html=True)
-                st.info("💡 Screen Flashlight Active: Illuminating face with maximum screen brightness.")
-                blind_face_cam = st.camera_input("Scan Face for Eyes-Free Login", key="blind_main_face_cam")
+                st.info(f"💡 {t['screen_flash_active_info']}")
+                blind_face_cam = st.camera_input(t["scan_face_label"], key="blind_main_face_cam")
                 st.markdown('</div>', unsafe_allow_html=True)
             else:
-                blind_face_cam = st.camera_input("Scan Face for Eyes-Free Login", key="blind_main_face_cam")
+                blind_face_cam = st.camera_input(t["scan_face_label"], key="blind_main_face_cam")
 
         if blind_face_cam:
             spatial_b = analyze_face_spatial_guidance(blind_face_cam)
@@ -1179,12 +1148,8 @@ if st.session_state.access_mode == "Blind Assist Mode":
                     zt_eval = PassiveRiskEngine.evaluate_zero_trust("127.0.0.1", st.session_state.device_fingerprint, 0)
                     st.session_state.zt_score = zt_eval["score"]
                     db.log_security_event("AUTH_SUCCESS_BIOMETRIC", user_email=best_match["email"], ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=zt_eval["score"], details="One-Tap Blind Face Login Verified")
-                    st.success(f"✅ Face verified! Welcome back, {best_match['fullname']}!")
-                    welcome_back = {
-                        "Tamil": f"சரிபார்க்கப்பட்டது. மீண்டும் நல்வரவு {best_match['fullname']}",
-                        "English": f"Face verified. Welcome back {best_match['fullname']}",
-                        "Hindi": f"चेहरा सत्यापित हुआ। स्वागत है {best_match['fullname']}"
-                    }.get(st.session_state.lang, f"Face verified. Welcome back {best_match['fullname']}")
+                    st.success(f"✅ {t['face_verified_msg']} {best_match['fullname']}!")
+                    welcome_back = f"{t['face_verified_msg']} {best_match['fullname']}"
                     play_speech(welcome_back, st.session_state.lang)
                     st.session_state.login_attempts = 0
                     db.reset_failed_attempts(best_match["email"])
@@ -1192,34 +1157,30 @@ if st.session_state.access_mode == "Blind Assist Mode":
                     st.rerun()
                 else:
                     db.log_security_event("BIOMETRIC_MISMATCH", user_email="", ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=60, details="Face feature distance below threshold")
-                    st.error("❌ Face does not match registered biometrics. Please adjust lighting or try again.")
-                    mismatch_txt = {
-                        "Tamil": "பதிவு செய்யப்பட்ட முகத்துடன் பொருந்தவில்லை. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.",
-                        "English": "Face does not match registered biometrics. Please adjust lighting and try again."
-                    }.get(st.session_state.lang, "Face does not match registered biometrics. Please adjust lighting and try again.")
-                    play_speech(mismatch_txt, st.session_state.lang)
+                    st.error(f"❌ {t['face_mismatch_msg']}")
+                    play_speech(t["face_mismatch_msg"], st.session_state.lang)
 
     # 2. ACOUSTIC SECURITY VIBRATION CHALLENGE
     with st.container(border=True):
-        st.markdown("### 📳 Audio Security Vibration Challenge")
-        st.write("Acoustic CAPTCHA designed for visually impaired users. Listen to the audio pulse beeps and select the count.")
+        st.markdown(f"### 📳 {t['acoustic_challenge_title']}")
+        st.write(t["acoustic_challenge_desc"])
         
         col_p1, col_p2 = st.columns([1.5, 1])
         with col_p1:
-            if st.button("🔊 Play Audio Pulses", key="blind_play_pulses_btn", type="primary", use_container_width=True):
+            if st.button(f"🔊 {t['play_pulses_btn']}", key="blind_play_pulses_btn", type="primary", use_container_width=True):
                 play_audio_pulses(st.session_state.audio_pulse_count)
                 play_speech(t["audio_challenge_prompt"], st.session_state.lang)
         with col_p2:
-            if st.button("🔄 New Challenge", key="blind_new_pulses_btn", type="secondary", use_container_width=True):
+            if st.button(f"🔄 {t['new_challenge_btn']}", key="blind_new_pulses_btn", type="secondary", use_container_width=True):
                 st.session_state.audio_pulse_count = random.choice([2, 3, 4, 5])
                 st.session_state.blind_challenge_solved = False
                 st.rerun()
 
-        st.markdown("**How many audio pulses did you hear?**")
+        st.markdown(f"**{t['how_many_pulses']}**")
         p_c1, p_c2, p_c3, p_c4 = st.columns(4)
         for col, count_val in zip([p_c1, p_c2, p_c3, p_c4], [2, 3, 4, 5]):
             with col:
-                if st.button(f"{count_val} Pulses", key=f"pulse_sel_{count_val}", use_container_width=True):
+                if st.button(f"{count_val} {t['pulses_unit']}", key=f"pulse_sel_{count_val}", use_container_width=True):
                     if count_val == st.session_state.audio_pulse_count:
                         st.session_state.blind_challenge_solved = True
                         db.log_security_event("ACOUSTIC_CHALLENGE_SOLVED", user_email="", ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=5, details=f"Pulse count {st.session_state.audio_pulse_count} verified")
@@ -1227,49 +1188,49 @@ if st.session_state.access_mode == "Blind Assist Mode":
                         st.rerun()
                     else:
                         db.log_security_event("ACOUSTIC_CHALLENGE_FAILED", user_email="", ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=35, details="Incorrect pulse count entered")
-                        play_speech("Incorrect pulse count. Please listen again.", st.session_state.lang)
-                        st.error("Incorrect count. Please click Play Audio Pulses to listen again.")
+                        play_speech(t["acoustic_fail_msg"], st.session_state.lang)
+                        st.error(t["acoustic_fail_msg"])
 
         if st.session_state.blind_challenge_solved:
-            st.success("✅ Acoustic Security Challenge Verified! Human User Confirmed.")
+            st.success(f"✅ {t['acoustic_pass_msg']}")
 
     # 3. REGISTER NEW USER (SIGN UP)
-    with st.expander("📝 Register New Account & Enroll Face", expanded=False):
-        st.write("Register a new user account with eyes-free face enrollment:")
-        b_su_name = st.text_input(f"{t['fullname']} *", placeholder="Your Name", key="b_su_name")
+    with st.expander(f"📝 {t['reg_face_title']}", expanded=False):
+        st.write(t["reg_face_sub"])
+        b_su_name = st.text_input(f"{t['fullname']} *", placeholder=t["fullname"], key="b_su_name")
         b_su_email = st.text_input(f"{t['email']} *", placeholder="name@example.com", key="b_su_email")
         b_su_phone = st.text_input(f"{t['phone']} *", placeholder="+91 9876543210", key="b_su_phone")
         b_su_pass = st.text_input(f"{t['password']} *", type="password", placeholder="••••••••", key="b_su_pass")
-        b_su_cam = st.camera_input("Capture Face for Enrollment", key="b_su_cam")
+        b_su_cam = st.camera_input(t["capture_face_enroll"], key="b_su_cam")
         if b_su_cam:
             sp_su = analyze_face_spatial_guidance(b_su_cam)
             if not sp_su["is_ready"]:
                 st.warning(get_spatial_voice_text(sp_su["status"], st.session_state.lang))
             else:
                 st.info(get_spatial_voice_text("CENTERED", st.session_state.lang))
-        if st.button("Register & Enroll Face", key="b_su_btn", type="primary", use_container_width=True):
+        if st.button(t["signup_btn"], key="b_su_btn", type="primary", use_container_width=True):
             if not b_su_name or not b_su_email or not b_su_pass or not b_su_cam:
-                st.error("Please fill all required fields and capture face.")
+                st.error(t["err_missing_fields"])
             else:
                 sp_su = analyze_face_spatial_guidance(b_su_cam)
                 if not sp_su["is_ready"]:
-                    st.error("No face detected inside circle. Please position face in circle and retake photo.")
-                    play_speech("No face detected inside circle. Please position face in circle and retake photo.", st.session_state.lang)
+                    st.error(get_spatial_voice_text(sp_su["status"], st.session_state.lang))
+                    play_speech(get_spatial_voice_text(sp_su["status"], st.session_state.lang), st.session_state.lang)
                 else:
                     ok, face_res = extract_face_features(b_su_cam)
                     if ok:
                         reg_ok, reg_msg = db.register_user(b_su_name, b_su_email, b_su_phone, b_su_pass, face_res)
                         if reg_ok:
                             st.success(t["signup_success"])
-                            play_speech(f"Welcome {b_su_name}. Account registered successfully.", st.session_state.lang)
+                            play_speech(f"{t['signup_success']} {b_su_name}", st.session_state.lang)
                         else:
                             st.error(reg_msg)
                     else:
-                        st.error("Failed to extract face features. Please retake photo.")
+                        st.error(t["err_face_missing"])
 
     # 4. MANUAL CREDENTIALS LOGIN FOR ASSISTED ACCESS
-    with st.expander("📝 Manual Text Login for Assisted Access", expanded=False):
-        st.write("If someone is assisting you with manual typing:")
+    with st.expander(f"📝 {t['manual_login_title']}", expanded=False):
+        st.write(t["manual_login_sub"])
         with st.form("blind_assisted_login_form"):
             b_email = st.text_input(t["email"], placeholder="name@example.com", key="b_login_email")
             b_password = st.text_input(t["password"], type="password", placeholder="••••••••", key="b_login_pass")
@@ -1277,7 +1238,7 @@ if st.session_state.access_mode == "Blind Assist Mode":
             if b_submit:
                 user = db.get_user_by_email(b_email)
                 if user and db.verify_password(b_password, user["salt"], user["password_hash"]):
-                    st.success("✅ Login successful!")
+                    st.success(f"✅ {t['face_verified_msg']} {user['fullname']}!")
                     st.session_state.login_attempts = 0
                     db.reset_failed_attempts(b_email)
                     st.session_state.logged_in_user = dict(user)
@@ -1286,7 +1247,7 @@ if st.session_state.access_mode == "Blind Assist Mode":
                     st.error(t["err_invalid_login"])
 
     st.markdown("---")
-    st.caption("🔒 PS05: Secure & Accessible Digital Authentication • Multi-Factor Biometric & Adaptive Recovery")
+    st.caption(f"🔒 PS05: {t['title']} • {t['footer_caption']}")
     st.stop()
 
 # ----------------- MAIN TABS -----------------
@@ -1318,7 +1279,7 @@ with tab_login:
         # FALLBACK 1: OTP VERIFICATION
         if fallback_choice == t["fallback_otp"]:
             st.markdown("---")
-            st.markdown("#### 📱 Step-Up OTP Verification")
+            st.markdown(f"#### 📱 {t['stepup_otp_title']}")
             
             masked_phone = user_record["phone"] if user_record else "+91 98765-XXXXX"
             if not st.session_state.generated_otp:
@@ -1361,21 +1322,21 @@ with tab_login:
 
             col_lcam1, col_lcam2 = st.columns([3, 2])
             with col_lcam1:
-                st.markdown("#### 📸 Step-Up Face Recognition Unlock")
+                st.markdown(f"#### 📸 {t['blind_face_login_title']}")
                 st.write(t["take_face_login"])
             with col_lcam2:
-                flash_l_state = st.toggle("💡 Auto Flashlight", value=st.session_state.flash_login, key="login_flash_toggle")
+                flash_l_state = st.toggle(f"💡 {t['screen_flashlight_label']}", value=st.session_state.flash_login, key="login_flash_toggle")
                 if flash_l_state != st.session_state.flash_login:
                     st.session_state.flash_login = flash_l_state
                     st.rerun()
 
             if st.session_state.flash_login:
                 st.markdown('<div class="screen-flash-box">', unsafe_allow_html=True)
-                st.info("💡 **Screen Flashlight Active:** Maximum display luminance is lighting up your face.")
-                face_login_cam = st.camera_input("Scan Face for Unlock", key="face_unlock_cam")
+                st.info(f"💡 {t['screen_flash_active_info']}")
+                face_login_cam = st.camera_input(t["scan_face_label"], key="face_unlock_cam")
                 st.markdown('</div>', unsafe_allow_html=True)
             else:
-                face_login_cam = st.camera_input("Scan Face for Unlock", key="face_unlock_cam")
+                face_login_cam = st.camera_input(t["scan_face_label"], key="face_unlock_cam")
             
             if face_login_cam:
                 spatial_step = analyze_face_spatial_guidance(face_login_cam)
@@ -1486,7 +1447,7 @@ with tab_login:
 
         col_act1, col_act2 = st.columns(2)
         with col_act1:
-            if st.button("📸 One-Tap Face Biometric Login", key="face_login_toggle_btn", type="secondary", use_container_width=True):
+            if st.button(f"📸 {t['blind_face_login_title']}", key="face_login_toggle_btn", type="secondary", use_container_width=True):
                 st.session_state.show_face_login = not st.session_state.get("show_face_login", False)
                 st.session_state.show_google_dialog = False
         with col_act2:
@@ -1497,10 +1458,10 @@ with tab_login:
         # ONE-TAP BIOMETRIC FACE LOGIN MODAL/BOX
         if st.session_state.get("show_face_login", False):
             st.markdown("---")
-            st.markdown("#### 📸 Eyes-Free Biometric Face Login")
-            st.caption("Position your face in front of the camera. The system will guide you automatically.")
+            st.markdown(f"#### 📸 {t['blind_face_login_title']}")
+            st.caption(t["blind_face_login_desc"])
             
-            face_quick_cam = st.camera_input("Scan Face for Login", key="quick_face_cam")
+            face_quick_cam = st.camera_input(t["scan_face_label"], key="quick_face_cam")
             if face_quick_cam:
                 spatial_l = analyze_face_spatial_guidance(face_quick_cam)
                 if not spatial_l["is_ready"]:
@@ -1509,7 +1470,7 @@ with tab_login:
                     play_speech(voice_msg_l, st.session_state.lang)
                 else:
                     st.info(f"✅ {get_spatial_voice_text('CENTERED', st.session_state.lang)}")
-                    if st.button("Verify Face & Log In", key="quick_face_verify_btn", type="primary", use_container_width=True):
+                    if st.button(t["verify_face_btn"], key="quick_face_verify_btn", type="primary", use_container_width=True):
                         with st.spinner("Analyzing biometric scan..."):
                             all_users = db.get_all_users_with_face()
                             best_match = None
@@ -1524,8 +1485,8 @@ with tab_login:
                                 zt_eval = PassiveRiskEngine.evaluate_zero_trust("127.0.0.1", st.session_state.device_fingerprint, 0)
                                 st.session_state.zt_score = zt_eval["score"]
                                 db.log_security_event("AUTH_SUCCESS_BIOMETRIC", user_email=best_match["email"], ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=zt_eval["score"], details="One-Tap Face Biometric Login Verified")
-                                st.success(f"✅ Face verified! Welcome back, {best_match['fullname']}!")
-                                play_speech(f"Face verified. Welcome back {best_match['fullname']}", st.session_state.lang)
+                                st.success(f"✅ {t['face_verified_msg']} {best_match['fullname']}!")
+                                play_speech(f"{t['face_verified_msg']} {best_match['fullname']}", st.session_state.lang)
                                 st.session_state.login_attempts = 0
                                 db.reset_failed_attempts(best_match["email"])
                                 st.session_state.logged_in_user = dict(best_match)
@@ -1533,8 +1494,8 @@ with tab_login:
                                 st.rerun()
                             else:
                                 db.log_security_event("BIOMETRIC_MISMATCH", user_email="", ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=60, details="Face mismatch on one-tap login")
-                                st.error("❌ Face does not match registered biometrics. Please adjust lighting or try again.")
-                                play_speech("Face does not match registered biometrics.", st.session_state.lang)
+                                st.error(f"❌ {t['face_mismatch_msg']}")
+                                play_speech(t["face_mismatch_msg"], st.session_state.lang)
 
         # GOOGLE POPUP MODAL (MATCHING GOOGLE ACCOUNTS OAUTH SCREENSHOT)
         if st.session_state.get("show_google_dialog", False):
@@ -1590,7 +1551,7 @@ with tab_login:
                         if st.button("Select", key=f"g_sel_{idx}", type="primary", use_container_width=True):
                             with st.spinner("Authenticating with Google OAuth 2.0..."):
                                 g_user = db.get_or_create_google_user(g_acc['name'], g_acc['email'])
-                                g_user["provider"] = "Google SSO (OAuth 2.0)"
+                                g_user["provider"] = "Google SSO OAuth 2.0"
                                 st.session_state.logged_in_user = g_user
                                 st.session_state.login_attempts = 0
                                 st.session_state.show_google_dialog = False
@@ -1606,7 +1567,7 @@ with tab_login:
                         if c_name.strip() and "@" in c_email:
                             with st.spinner("Exchanging OAuth Token..."):
                                 g_user = db.get_or_create_google_user(c_name.strip(), c_email.strip().lower())
-                                g_user["provider"] = "Google SSO (OAuth 2.0)"
+                                g_user["provider"] = "Google SSO OAuth 2.0"
                                 st.session_state.logged_in_user = g_user
                                 st.session_state.login_attempts = 0
                                 st.session_state.show_google_dialog = False
@@ -1623,7 +1584,7 @@ with tab_login:
 # ===============================================================
 with tab_signup:
     st.subheader(t["signup_heading"])
-    st.caption("All fields and biometric facial enrollment are required.")
+    st.caption(t["signup_caption"])
     
     with st.container():
         signup_name = st.text_input(f"{t['fullname']} *", placeholder="Your Name", key="su_name")
@@ -1646,7 +1607,7 @@ with tab_signup:
             st.caption(t["face_enroll_help"])
         with col_cam_toggle:
             flash_su_state = st.toggle(
-                "💡 Auto Flashlight", 
+                f"💡 {t['screen_flashlight_label']}", 
                 value=st.session_state.flash_signup, 
                 key="su_flash_toggle"
             )
@@ -1656,11 +1617,11 @@ with tab_signup:
 
         if st.session_state.flash_signup:
             st.markdown('<div class="screen-flash-box">', unsafe_allow_html=True)
-            st.info("💡 **Screen Flashlight Active:** Maximum display luminance is lighting up your face.")
-            face_camera_image = st.camera_input("Capture Face Biometric", key="signup_camera")
+            st.info(f"💡 {t['screen_flash_active_info']}")
+            face_camera_image = st.camera_input(t["capture_face_enroll"], key="signup_camera")
             st.markdown('</div>', unsafe_allow_html=True)
         else:
-            face_camera_image = st.camera_input("Capture Face Biometric", key="signup_camera")
+            face_camera_image = st.camera_input(t["capture_face_enroll"], key="signup_camera")
         if face_camera_image:
             spatial_su = analyze_face_spatial_guidance(face_camera_image)
             if not spatial_su["is_ready"]:
@@ -1715,7 +1676,7 @@ with tab_signup:
                             if ok:
                                 db.log_security_event("USER_REGISTERED", user_email=signup_email, ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=0, details="New user account enrolled with facial biometrics")
                                 st.success(t["signup_success"])
-                                play_speech(f"Welcome {signup_name}. Account registered successfully.", st.session_state.lang)
+                                play_speech(f"{t['signup_success']} {signup_name}", st.session_state.lang)
                                 st.balloons()
                             else:
                                 st.error(f"❌ {db_msg}")
@@ -1725,7 +1686,7 @@ with tab_signup:
 # ===============================================================
 with tab_guide:
     st.subheader(t["guide_title"])
-    st.caption("Visual and audio guidance to assist anyone with logging in or signing up.")
+    st.caption(t["guide_caption"])
     
     col_v1, col_v2 = st.columns(2)
     with col_v1:
@@ -1750,4 +1711,4 @@ with tab_guide:
 
 # Footer
 st.markdown("---")
-st.caption("🔒 PS05: Secure & Accessible Digital Authentication • Multi-Factor Biometric & Adaptive Recovery")
+st.caption(f"🔒 PS05: {t['title']} • {t['footer_caption']}")
