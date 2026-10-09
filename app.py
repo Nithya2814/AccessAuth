@@ -11,7 +11,38 @@ from translations import TRANSLATIONS
 import face_engine
 importlib.reload(face_engine)
 from face_engine import extract_face_features, compare_faces, check_lighting, analyze_face_spatial_guidance, get_spatial_voice_text
-from risk_friction import RiskEngine, FrictionEngine, PassiveRiskEngine
+import risk_friction
+try:
+    importlib.reload(risk_friction)
+except Exception:
+    pass
+
+RiskEngine = getattr(risk_friction, "RiskEngine", None)
+FrictionEngine = getattr(risk_friction, "FrictionEngine", None)
+PassiveRiskEngine = getattr(risk_friction, "PassiveRiskEngine", None)
+
+if PassiveRiskEngine is None:
+    import hashlib
+    class PassiveRiskEngine:
+        @staticmethod
+        def compute_device_fingerprint(user_agent: str = "Mozilla/5.0", client_ip: str = "127.0.0.1", platform_entropy: str = "") -> str:
+            raw = f"{user_agent}|{client_ip}|{platform_entropy}"
+            return hashlib.sha256(raw.encode('utf-8')).hexdigest()[:24]
+
+        @staticmethod
+        def evaluate_zero_trust(ip_address: str, device_fingerprint: str, failed_attempts: int, is_throttled: bool = False) -> dict:
+            base_score = 5
+            risk_factors = []
+            if is_throttled:
+                base_score += 85
+                risk_factors.append("IP Address Rate Throttled (Rapid Burst Failures)")
+            if failed_attempts >= 1:
+                base_score += min(85, failed_attempts * 30)
+                risk_factors.append("Failed Attempt Penalty")
+            final_score = min(100, max(0, base_score))
+            level = "LOW" if final_score < 25 else ("MODERATE" if final_score < 65 else ("HIGH" if final_score < 85 else "CRITICAL"))
+            decision = "ALLOW_FRICTIONLESS" if final_score < 25 else "STEP_UP_CHALLENGE"
+            return {"score": final_score, "level": level, "decision": decision, "risk_factors": risk_factors, "device_fingerprint": device_fingerprint}
 import voice_helper
 try:
     importlib.reload(voice_helper)
