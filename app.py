@@ -380,12 +380,30 @@ st.markdown(f"""
 <style>
     {font_import}
 
-    /* Clean System Typography */
-    html, body, [class*="css"], p, span, div, label, input, button, textarea {{
+    /* Targeted System Typography: Clean reading experience without breaking icons or layout */
+    p, h1, h2, h3, h4, h5, h6, label, .stMarkdown, .stMarkdown p {{
         font-family: {font_family}
         letter-spacing: {letter_spacing}
         word-spacing: {word_spacing}
         line-height: {line_height}
+    }}
+
+    /* Strictly preserve Material Symbols & Icons fonts across Streamlit */
+    [data-testid="stIconMaterial"], 
+    .material-symbols-rounded, 
+    [class*="material-symbols"], 
+    span[translate="no"],
+    i, 
+    svg {{
+        font-family: 'Material Symbols Rounded', 'Material Icons', sans-serif !important;
+        letter-spacing: normal !important;
+        word-spacing: normal !important;
+        font-feature-settings: normal !important;
+    }}
+
+    /* Hide distracting overlapping inline instruction overlays */
+    div[data-testid="InputInstructions"] {{
+        display: none !important;
     }}
 
     .stApp {{
@@ -398,8 +416,8 @@ st.markdown(f"""
         border-right: 1px solid {border_color} !important;
     }}
 
-    /* Global Text Scaling */
-    html, body, p, span, div {{
+    /* Global Text Scaling for Content */
+    p, span, div {{
         color: {text_color} !important;
     }}
     
@@ -419,6 +437,8 @@ st.markdown(f"""
         border-radius: 8px !important;
         font-size: calc(15px * {f_scale}) !important;
         padding: 10px 14px !important;
+        letter-spacing: normal !important;
+        word-spacing: normal !important;
     }}
 
     /* High Visibility Placeholder in Light and Dark Modes */
@@ -742,6 +762,8 @@ with st.sidebar:
     )
     if selected_lang != st.session_state.lang:
         st.session_state.lang = selected_lang
+        if st.session_state.access_mode == "Blind Assist Mode":
+            st.session_state.should_announce_blind = True
         st.rerun()
 
     st.markdown("---")
@@ -1086,21 +1108,54 @@ if st.session_state.access_mode == "Blind Assist Mode":
     </div>
     """, unsafe_allow_html=True)
     
-    # 1. ONE-TAP FACE BIOMETRIC LOGIN (PRIMARY EYES-FREE METHOD)
+    if "blind_flash_active" not in st.session_state:
+        st.session_state.blind_flash_active = False
+
+    # 1. ONE-TAP FACE BIOMETRIC LOGIN
     with st.container(border=True):
         st.markdown("### 📸 Eyes-Free One-Tap Face Biometric Login")
         st.write("Position your face inside the green circular viewfinder and take a photo. Our spatial voice engine will guide you automatically.")
         
-        col_b_cam1, col_b_cam2 = st.columns([3, 1])
-        with col_b_cam1:
-            blind_face_cam = st.camera_input("Scan Face for Eyes-Free Login", key="blind_main_face_cam")
+        col_b_cam1, col_b_cam2 = st.columns([3, 1.4])
         with col_b_cam2:
+            flash_state = st.toggle("💡 Screen Flashlight", value=st.session_state.blind_flash_active, key="blind_flash_toggle")
+            if flash_state != st.session_state.blind_flash_active:
+                st.session_state.blind_flash_active = flash_state
+                st.rerun()
+
+            voice_help_texts = {
+                "English": "Position your face directly towards your camera inside the circular guide and take a photo. If lighting is low, screen flashlight will illuminate automatically.",
+                "Tamil": "உங்கள் முகத்தை வட்டத்திற்குள் நேரடியாக காட்டி புகைப்படம் எடுக்கவும். வெளிச்சம் குறைவாக இருந்தால் ஸ்கிரீன் ஃபிளாஷ்லைட் தானாக ஆன் ஆகும்.",
+                "Hindi": "वृत्त के अंदर अपना चेहरा सीधे कैमरे की ओर रखें। यदि रोशनी कम है, तो स्क्रीन फ्लैशलाइट चालू हो जाएगी।",
+                "Telugu": "వృత్తం లోపల మీ ముఖాన్ని నేరుగా కెమెరా వైపు ఉంచి ఫోటో తీయండి. వెలుతురు తక్కువగా ఉంటే స్క్రీన్ ఫ్లాష్ ఆన్ అవుతుంది.",
+                "Kannada": "ವೃತ್ತದೊಳಗೆ ನಿಮ್ಮ ಮುಖವನ್ನು ನೇರವಾಗಿ ಕ್ಯಾಮೆರಾ ಕಡೆಗೆ ಇರಿಸಿ ಫೋಟೋ ತೆಗೆದುಕೊಳ್ಳಿ. ಬೆಳಕು ಕಡಿಮೆಯಿದ್ದರೆ ಸ್ಕ್ರೀನ್ ಫ್ಲ್ಯಾಶ್ ಆನ್ ಆಗುತ್ತದೆ.",
+                "Malayalam": "വൃത്തത്തിനുള്ളിൽ നിങ്ങളുടെ മുഖം നേരിട്ട് ക്യാമറയിലേക്ക് കാണിച്ച് ഫോട്ടോ എടുക്കുക. വെളിച്ചക്കുറവുണ്ടെങ്കിൽ സ്ക്രീൻ ഫ്ലാഷ് ഓണാകും.",
+                "Bengali": "বৃত্তের ভিতরে আপনার মুখটি সরাসরি ক্যামেরার দিকে রাখুন এবং ছবি তুলুন। আলো কম থাকলে স্ক্রিন ফ্ল্যাশলাইট চালু হবে।",
+                "Marathi": "वर्तुळाच्या आत तुमचा चेहरा थेट कॅमेऱ्यासमोर ठेवा. प्रकाश कमी असल्यास स्क्रीन फ्लॅशलाइट आपोआप सुरू होईल.",
+                "Spanish": "Coloque su rostro dentro del círculo guía hacia la cámara. Si hay poca luz, el flash de pantalla se encenderá automáticamente.",
+                "French": "Placez votre visage dans le repère circulaire vers la caméra. En cas de faible luminosité, le flash d'écran s'allume automatiquement."
+            }
             if st.button("🔊 Voice Instructions", key="blind_voice_cam_btn", type="secondary", use_container_width=True):
-                play_speech("Position your face directly towards your camera inside the circular guide and take a photo. If needed, the system will tell you to turn on lights or move your face.", st.session_state.lang)
+                play_speech(voice_help_texts.get(st.session_state.lang, voice_help_texts["English"]), st.session_state.lang)
+
+        with col_b_cam1:
+            if st.session_state.blind_flash_active:
+                st.markdown('<div class="screen-flash-box">', unsafe_allow_html=True)
+                st.info("💡 Screen Flashlight Active: Illuminating face with maximum screen brightness.")
+                blind_face_cam = st.camera_input("Scan Face for Eyes-Free Login", key="blind_main_face_cam")
+                st.markdown('</div>', unsafe_allow_html=True)
+            else:
+                blind_face_cam = st.camera_input("Scan Face for Eyes-Free Login", key="blind_main_face_cam")
 
         if blind_face_cam:
             spatial_b = analyze_face_spatial_guidance(blind_face_cam)
-            if not spatial_b["is_ready"]:
+            if spatial_b["status"] == "TOO_DARK":
+                st.session_state.blind_flash_active = True
+                v_dark = get_spatial_voice_text("TOO_DARK", st.session_state.lang)
+                st.warning(f"💡 {v_dark}")
+                play_speech(v_dark, st.session_state.lang)
+                st.rerun()
+            elif not spatial_b["is_ready"]:
                 v_msg_b = get_spatial_voice_text(spatial_b["status"], st.session_state.lang)
                 st.error(f"⚠️ {v_msg_b}")
                 play_speech(v_msg_b, st.session_state.lang)
@@ -1108,7 +1163,7 @@ if st.session_state.access_mode == "Blind Assist Mode":
             else:
                 centered_txt = get_spatial_voice_text("CENTERED", st.session_state.lang)
                 st.info(f"✅ {centered_txt}")
-                play_speech("Face detected inside circle. Verifying credentials.", st.session_state.lang)
+                play_speech(centered_txt, st.session_state.lang)
                 
                 # Automatically check against all enrolled faces in database
                 all_users = db.get_all_users_with_face()
@@ -1125,7 +1180,12 @@ if st.session_state.access_mode == "Blind Assist Mode":
                     st.session_state.zt_score = zt_eval["score"]
                     db.log_security_event("AUTH_SUCCESS_BIOMETRIC", user_email=best_match["email"], ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=zt_eval["score"], details="One-Tap Blind Face Login Verified")
                     st.success(f"✅ Face verified! Welcome back, {best_match['fullname']}!")
-                    play_speech(f"Face verified. Welcome back {best_match['fullname']}", st.session_state.lang)
+                    welcome_back = {
+                        "Tamil": f"சரிபார்க்கப்பட்டது. மீண்டும் நல்வரவு {best_match['fullname']}",
+                        "English": f"Face verified. Welcome back {best_match['fullname']}",
+                        "Hindi": f"चेहरा सत्यापित हुआ। स्वागत है {best_match['fullname']}"
+                    }.get(st.session_state.lang, f"Face verified. Welcome back {best_match['fullname']}")
+                    play_speech(welcome_back, st.session_state.lang)
                     st.session_state.login_attempts = 0
                     db.reset_failed_attempts(best_match["email"])
                     st.session_state.logged_in_user = dict(best_match)
@@ -1133,7 +1193,11 @@ if st.session_state.access_mode == "Blind Assist Mode":
                 else:
                     db.log_security_event("BIOMETRIC_MISMATCH", user_email="", ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=60, details="Face feature distance below threshold")
                     st.error("❌ Face does not match registered biometrics. Please adjust lighting or try again.")
-                    play_speech("Face does not match registered biometrics. Please adjust lighting and try again.", st.session_state.lang)
+                    mismatch_txt = {
+                        "Tamil": "பதிவு செய்யப்பட்ட முகத்துடன் பொருந்தவில்லை. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.",
+                        "English": "Face does not match registered biometrics. Please adjust lighting and try again."
+                    }.get(st.session_state.lang, "Face does not match registered biometrics. Please adjust lighting and try again.")
+                    play_speech(mismatch_txt, st.session_state.lang)
 
     # 2. ACOUSTIC SECURITY VIBRATION CHALLENGE
     with st.container(border=True):
@@ -1160,7 +1224,7 @@ if st.session_state.access_mode == "Blind Assist Mode":
                         st.session_state.blind_challenge_solved = True
                         db.log_security_event("ACOUSTIC_CHALLENGE_SOLVED", user_email="", ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=5, details=f"Pulse count {st.session_state.audio_pulse_count} verified")
                         play_speech(t["audio_challenge_pass"], st.session_state.lang)
-                        st.success(t["audio_challenge_pass"])
+                        st.rerun()
                     else:
                         db.log_security_event("ACOUSTIC_CHALLENGE_FAILED", user_email="", ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=35, details="Incorrect pulse count entered")
                         play_speech("Incorrect pulse count. Please listen again.", st.session_state.lang)

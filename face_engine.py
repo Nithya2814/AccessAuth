@@ -209,9 +209,46 @@ def analyze_face_spatial_guidance(image_bytes) -> dict:
                         "is_ready": False
                     }
 
+                # 4. Iris & Gaze Centering Analysis
+                try:
+                    eye_y1 = max(0, y + int(h * 0.16))
+                    eye_y2 = min(height, y + int(h * 0.52))
+                    eye_x1 = max(0, x)
+                    eye_x2 = min(width, x + w)
+                    if eye_y2 > eye_y1 and eye_x2 > eye_x1:
+                        eye_crop = cv2.cvtColor(np_frame[eye_y1:eye_y2, eye_x1:eye_x2], cv2.COLOR_RGB2GRAY)
+                        min_v, _, _, _ = cv2.minMaxLoc(eye_crop)
+                        thresh_v = min(80, max(25, int(min_v + 28)))
+                        _, dark_mask = cv2.threshold(eye_crop, thresh_v, 255, cv2.THRESH_BINARY_INV)
+                        
+                        half_w = eye_crop.shape[1] // 2
+                        left_eye_half = dark_mask[:, :half_w]
+                        right_eye_half = dark_mask[:, half_w:]
+                        
+                        cnts_l, _ = cv2.findContours(left_eye_half, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                        cnts_r, _ = cv2.findContours(right_eye_half, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                        
+                        has_l = any(cv2.contourArea(c) > 12 for c in cnts_l)
+                        has_r = any(cv2.contourArea(c) > 12 for c in cnts_r)
+                        
+                        if has_l and not has_r:
+                            return {
+                                "status": "LOOK_STRAIGHT",
+                                "guidance_en": "Please look straight into the camera inside the circle.",
+                                "is_ready": False
+                            }
+                        elif has_r and not has_l:
+                            return {
+                                "status": "LOOK_STRAIGHT",
+                                "guidance_en": "Please look straight into the camera inside the circle.",
+                                "is_ready": False
+                            }
+                except Exception:
+                    pass
+
             return {
                 "status": "CENTERED",
-                "guidance_en": "Face centered inside circle. Ready to authenticate.",
+                "guidance_en": "Face and eyes centered inside circle. You are inside the frame. You can now take photo, press Enter or Space.",
                 "is_ready": True
             }
         except Exception:
@@ -297,103 +334,113 @@ def get_spatial_voice_text(status: str, lang: str = "English") -> str:
     """Localized voice guidance prompts for all 10 languages."""
     messages = {
         "English": {
-            "CENTERED": "Face centered inside circle. Ready to authenticate.",
+            "CENTERED": "Face and eyes centered inside circle. You are inside the frame. You can now take photo, press Enter or Space.",
             "MOVE_RIGHT": "Move slightly to your right inside the circle.",
             "MOVE_LEFT": "Move slightly to your left inside the circle.",
             "MOVE_UP": "Move slightly up inside the circle.",
             "MOVE_DOWN": "Move slightly down inside the circle.",
             "MOVE_CLOSER": "Please move closer to the camera inside the circle.",
-            "TOO_DARK": "Low lighting. Please turn on screen flash.",
+            "LOOK_STRAIGHT": "Please look straight into the camera inside the circle.",
+            "TOO_DARK": "Low lighting detected. High luminance screen flash activated. Please face the screen.",
             "NO_FACE": "No face detected inside the circle. Please face the camera directly."
         },
         "Tamil": {
-            "CENTERED": "வட்டத்தின் மையத்தில் முகம் உள்ளது. சரிபார்க்க தயார்.",
+            "CENTERED": "வட்டத்திற்குள் வந்துவிட்டீர்கள்! முகம் மற்றும் கண்கள் மையத்தில் உள்ளன. இப்போது நீங்கள் புகைப்படம் எடுக்கலாம், என்டர் அழுத்தவும்.",
             "MOVE_RIGHT": "சற்று வலதுபுறம் நகர்ந்து வட்டத்திற்குள் வரவும்.",
             "MOVE_LEFT": "சற்று இடதுபுறம் நகர்ந்து வட்டத்திற்குள் வரவும்.",
             "MOVE_UP": "வட்டத்திற்குள் சற்று மேலே வரவும்.",
             "MOVE_DOWN": "வட்டத்திற்குள் சற்று கீழே வரவும்.",
             "MOVE_CLOSER": "வட்டத்திற்குள் சற்று அருகில் வரவும்.",
-            "TOO_DARK": "வெளிச்சம் குறைவாக உள்ளது. ஃபிளாஷ் ஆன் செய்யவும்.",
+            "LOOK_STRAIGHT": "தயவுசெய்து வட்டத்திற்குள் கேமராவை நேராக பார்க்கவும்.",
+            "TOO_DARK": "வெளிச்சம் குறைவாக உள்ளது. ஆட்டோ ஸ்கிரீன் ஃபிளாஷ்லைட் ஆன் செய்யப்பட்டுள்ளது. திரையின் முன் வரவும்.",
             "NO_FACE": "வட்டத்திற்குள் முகம் கண்டறியப்படவில்லை. தயவுசெய்து உங்கள் முகத்தை வட்டத்திற்குள் வைக்கவும்."
         },
         "Hindi": {
-            "CENTERED": "चेहरा केंद्र में है। प्रमाणीकरण के लिए तैयार।",
+            "CENTERED": "चेहरा और आँखें वृत्त के केंद्र में हैं। आप फ्रेम के अंदर हैं। अब आप फोटो ले सकते हैं, एंटर दबाएं।",
             "MOVE_RIGHT": "थोड़ा दाईं ओर जाएं।",
             "MOVE_LEFT": "थोड़ा बाईं ओर जाएं।",
             "MOVE_UP": "थोड़ा ऊपर आएं।",
             "MOVE_DOWN": "थोड़ा नीचे आएं।",
             "MOVE_CLOSER": "कृपया कैमरे के पास आएं।",
-            "TOO_DARK": "कम रोशनी है। कृपया स्क्रीन फ्लैश चालू करें।",
+            "LOOK_STRAIGHT": "कृपया वृत्त के अंदर कैमरे की ओर सीधा देखें।",
+            "TOO_DARK": "कम रोशनी है। स्क्रीन फ्लैशलाइट चालू कर दी गई है।",
             "NO_FACE": "चेहरा नहीं दिख रहा है। कैमरे के सामने आएं।"
         },
         "Telugu": {
-            "CENTERED": "ముఖం కేంద్రంలో ఉంది. ధృవీకరణకు సిద్ధంగా ఉంది.",
+            "CENTERED": "ముఖం మరియు కళ్ళు వృత్తం మధ్యలో ఉన్నాయి. ఇప్పుడు మీరు ఫోటో తీసుకోవచ్చు, ఎంటర్ నొక్కండి.",
             "MOVE_RIGHT": "కొద్దిగా కుడివైపుకు జరగండి.",
             "MOVE_LEFT": "కొద్దిగా ఎడమవైపుకు జరగండి.",
             "MOVE_UP": "కొద్దిగా పైకి జరగండి.",
             "MOVE_DOWN": "కొద్దిగా క్రిందికి జరగండి.",
             "MOVE_CLOSER": "దయచేసి కెమెరాకు దగ్గరగా రండి.",
-            "TOO_DARK": "తక్కువ వెలుతురు ఉంది. ఫ్లాష్ ఆన్ చేయండి.",
+            "LOOK_STRAIGHT": "దయచేసి కెమెరాను నేరుగా చూడండి.",
+            "TOO_DARK": "తక్కువ వెలుతురు ఉంది. స్క్రీన్ ఫ్లాష్ ఆన్ చేయబడింది.",
             "NO_FACE": "ముఖం కనిపించడం లేదు. కెమెరా ముందు రండి."
         },
         "Kannada": {
-            "CENTERED": "ಮುಖ ಕೇಂದ್ರದಲ್ಲಿದೆ. ಪರಿಶೀಲನೆಗೆ ಸಿದ್ಧವಾಗಿದೆ.",
+            "CENTERED": "ಮುಖ ಮತ್ತು ಕಣ್ಣುಗಳು ವೃತ್ತದ ಮಧ್ಯದಲ್ಲಿವೆ. ಈಗ ನೀವು ಫೋಟೋ ತೆಗೆದುಕೊಳ್ಳಬಹುದು, ಎಂಟರ್ ಒತ್ತಿರಿ.",
             "MOVE_RIGHT": "ಸ್ವಲ್ಪ ಬಲಕ್ಕೆ ಸರಿಸಿ.",
             "MOVE_LEFT": "ಸ್ವಲ್ಪ ಎಡಕ್ಕೆ ಸರಿಸಿ.",
             "MOVE_UP": "ಸ್ವಲ್ಪ ಮೇಲೆ ಸರಿಸಿ.",
             "MOVE_DOWN": "ಸ್ವಲ್ಪ ಕೆಳಗೆ ಸರಿಸಿ.",
             "MOVE_CLOSER": "ದಯವಿಟ್ಟು ಕ್ಯಾಮರಾಗೆ ಹತ್ತಿರ ಬನ್ನಿ.",
-            "TOO_DARK": "ಕಡಿಮೆ ಬೆಳಕು. ಫ್ಲ್ಯಾಶ್ ಆನ್ ಮಾಡಿ.",
+            "LOOK_STRAIGHT": "ದಯವಿಟ್ಟು ಕ್ಯಾಮೆರಾವನ್ನು ನೇರವಾಗಿ ನೋಡಿ.",
+            "TOO_DARK": "ಕಡಿಮೆ ಬೆಳಕು. ಸ್ಕ್ರೀನ್ ಫ್ಲ್ಯಾಶ್ ಆನ್ ಮಾಡಲಾಗಿದೆ.",
             "NO_FACE": "ಮುಖ ಕಾಣಿಸುತ್ತಿಲ್ಲ. ಕ್ಯಾಮೆರಾ ಎದುರು ಬನ್ನಿ."
         },
         "Malayalam": {
-            "CENTERED": "മുഖം കേന്ദ്രത്തിലാണ്. പരിശോധിക്കാൻ തയ്യാറാണ്.",
+            "CENTERED": "മുഖവും കണ്ണുകളും വൃത്തത്തിന്റെ മധ്യത്തിലാണ്. ഇപ്പോൾ ഫോട്ടോ എടുക്കാം, എന്റർ അമർത്തുക.",
             "MOVE_RIGHT": "അല്പം വലത്തോട്ട് നീങ്ങുക.",
             "MOVE_LEFT": "അല്പം ഇടത്തോട്ട് നീങ്ങുക.",
             "MOVE_UP": "അല്പം മുകളിലേക്ക് നീങ്ങുക.",
             "MOVE_DOWN": "അല്പം താഴേക്ക് നീങ്ങുക.",
             "MOVE_CLOSER": "ക്യാമറയിലേക്ക് അടുക്കുക.",
-            "TOO_DARK": "വെളിച്ചക്കുറവ്. ഫ്ലാഷ് ഓൺ ചെയ്യുക.",
+            "LOOK_STRAIGHT": "ക്യാമറയിലേക്ക് നേരിട്ട് നോക്കുക.",
+            "TOO_DARK": "വെളിച്ചക്കുറവ്. സ്ക്രീൻ ഫ്ലാഷ് ഓൺ ചെയ്തു.",
             "NO_FACE": "മുഖം കാണുന്നില്ല. ക്യാമറയ്ക്ക് നേരെ നിൽക്കുക."
         },
         "Bengali": {
-            "CENTERED": "মুখ কেন্দ্রে আছে। যাচাইয়ের জন্য প্রস্তুত।",
+            "CENTERED": "মুখ এবং চোখ বৃত্তের কেন্দ্রে রয়েছে। এখন আপনি ছবি তুলতে পারেন, এন্টার চাপুন।",
             "MOVE_RIGHT": "একটু ডানদিকে সরান।",
             "MOVE_LEFT": "একটু বাঁদিকে সরান।",
             "MOVE_UP": "একটু ওপরে সরান।",
             "MOVE_DOWN": "একটু নিচে সরান।",
             "MOVE_CLOSER": "ক্যামেরার কাছে আসুন।",
-            "TOO_DARK": "কম আলো। ফ্ল্যাশ চালু করুন।",
+            "LOOK_STRAIGHT": "ক্যামেরার দিকে সোজা তাকান।",
+            "TOO_DARK": "কম আলো। স্ক্রিন ফ্ল্যাশ চালু করা হয়েছে।",
             "NO_FACE": "মুখ দেখা যাচ্ছে না। ক্যামেরার সামনে আসুন।"
         },
         "Marathi": {
-            "CENTERED": "चेहरा मध्यभागी आहे. पडताळणीसाठी तयार.",
+            "CENTERED": "चेहरा आणि डोळे वर्तुळाच्या मध्यभागी आहेत. आता तुम्ही फोटो काढू शकता, एंटर दाबा.",
             "MOVE_RIGHT": "किंचित उजवीकडे सरका.",
             "MOVE_LEFT": "किंचित डावीकडे सरका.",
             "MOVE_UP": "किंचित वर सरका.",
             "MOVE_DOWN": "किंचित खाली सरका.",
             "MOVE_CLOSER": "कॅमेऱ्याजवळ या.",
-            "TOO_DARK": "कमी प्रकाश आहे. फ्लॅश चालू करा.",
+            "LOOK_STRAIGHT": "कॅमेऱ्याकडे सरळ पहा.",
+            "TOO_DARK": "कमी प्रकाश आहे. स्क्रीन फ्लॅश चालू केला आहे.",
             "NO_FACE": "चेहरा दिसत नाही. कॅमेऱ्यासमोर या."
         },
         "Spanish": {
-            "CENTERED": "Rostro centrado. Listo para verificar.",
+            "CENTERED": "Rostro y ojos centrados. Está dentro del marco. Ahora puede tomar la foto, presione Enter.",
             "MOVE_RIGHT": "Muévase ligeramente a la derecha.",
             "MOVE_LEFT": "Muévase ligeramente a la izquierda.",
             "MOVE_UP": "Muévase ligeramente hacia arriba.",
             "MOVE_DOWN": "Muévase ligeramente hacia abajo.",
             "MOVE_CLOSER": "Acérquese a la cámara.",
-            "TOO_DARK": "Poca luz. Encienda el flash de pantalla.",
+            "LOOK_STRAIGHT": "Mire directamente a la cámara dentro del círculo.",
+            "TOO_DARK": "Poca luz. Flash de pantalla activado.",
             "NO_FACE": "No se detecta rostro. Mire a la cámara."
         },
         "French": {
-            "CENTERED": "Visage centré. Prêt pour vérification.",
+            "CENTERED": "Visage et yeux centrés. Vous êtes dans le cadre. Vous pouvez maintenant prendre la photo, appuyez sur Entrée.",
             "MOVE_RIGHT": "Déplacez-vous légèrement vers la droite.",
             "MOVE_LEFT": "Déplacez-vous légèrement vers la gauche.",
             "MOVE_UP": "Déplacez-vous légèrement vers le haut.",
             "MOVE_DOWN": "Déplacez-vous légèrement vers le bas.",
             "MOVE_CLOSER": "Rapprochez-vous de la caméra.",
-            "TOO_DARK": "Faible luminosité. Activez le flash d'écran.",
+            "LOOK_STRAIGHT": "Regardez directement la caméra dans le cercle.",
+            "TOO_DARK": "Faible luminosité. Flash d'écran activé.",
             "NO_FACE": "Aucun visage détecté. Regardez la caméra."
         }
     }
