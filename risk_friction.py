@@ -49,9 +49,10 @@ class FrictionEngine:
 
     @staticmethod
     def generate_captcha() -> tuple:
-        """Generates a simple, accessible math CAPTCHA."""
-        n1 = random.randint(1, 9)
-        n2 = random.randint(1, 9)
-        question = f"{n1} + {n2}"
-        answer = n1 + n2
-        return question, answer
+        """
+        Generates a secure 5-character alphanumeric CAPTCHA code.
+        Prevents automated arithmetic bots from trivial automated solving.
+        """
+        chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        code = "".join(random.choice(chars) for _ in range(5))
+        return code, code

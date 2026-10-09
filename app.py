@@ -18,9 +18,15 @@ try:
 except Exception:
     pass
 
-play_speech = getattr(voice_helper, "play_speech", None)
+raw_play_speech = getattr(voice_helper, "play_speech", None)
 stop_speech = getattr(voice_helper, "stop_speech", None)
 play_audio_pulses = getattr(voice_helper, "play_audio_pulses", None)
+
+def play_speech(text: str, language_name: str = "English", force: bool = False):
+    """Speaks ONLY when Blind Assist Mode is active, or if force=True."""
+    if st.session_state.get("access_mode") == "Blind Assist Mode" or force:
+        if raw_play_speech:
+            raw_play_speech(text, language_name)
 
 if play_audio_pulses is None:
     def play_audio_pulses(pulse_count: int = 4):
@@ -163,15 +169,15 @@ FONT_OPTIONS = [
     "Extra Large"
 ]
 ACCESSIBILITY_MODES = [
+    "Blind Assist Mode",
     "Standard Mode",
-    "Dyslexia Mode",
-    "Blind Assist Mode"
+    "Dyslexia Mode"
 ]
 
 if "lang" not in st.session_state or st.session_state.lang not in AVAILABLE_LANGUAGES:
     st.session_state.lang = "English"
 if "access_mode" not in st.session_state or st.session_state.access_mode not in ACCESSIBILITY_MODES:
-    st.session_state.access_mode = "Standard Mode"
+    st.session_state.access_mode = "Blind Assist Mode"
 if "theme_mode" not in st.session_state or st.session_state.theme_mode not in ["Dark", "Light"]:
     st.session_state.theme_mode = "Light"
 if "font_scale" not in st.session_state or st.session_state.font_scale not in FONT_OPTIONS:
@@ -773,6 +779,14 @@ components.html(f"""
         if (!doc) return;
         
         doc.__accessCurrentLang = "{speech_lang_code}";
+        doc.__accessIsBlind = {'true' if is_blind else 'false'};
+        
+        if (!doc.__accessIsBlind) {{
+            try {{
+                var synth = (window.parent && window.parent.speechSynthesis) || window.speechSynthesis;
+                if (synth) synth.cancel();
+            }} catch(e) {{}}
+        }}
         
         if (doc.__accessShortcutsInstalled) return;
         doc.__accessShortcutsInstalled = true;
@@ -781,6 +795,7 @@ components.html(f"""
         var speakTimer = null;
         
         function speakFocus(text) {{
+            if (!doc.__accessIsBlind) return;
             if (!text || text.trim() === "" || text === lastSpoken) return;
             lastSpoken = text;
             
@@ -937,44 +952,6 @@ components.html(f"""
 </script>
 """, height=0, width=0)
 
-# ===============================================================
-# 🌟 TOP-LEVEL ACCESSIBILITY & VOICE BAR (FIRST TAB STOP ON LAPTOP)
-# ===============================================================
-with st.container():
-    top_col1, top_col2 = st.columns([3, 2])
-    with top_col1:
-        st.markdown("**🛡️ Accessibility Mode Selection**")
-        top_access = st.radio(
-            "Accessibility Mode Selection",
-            options=ACCESSIBILITY_MODES,
-            index=ACCESSIBILITY_MODES.index(st.session_state.access_mode) if st.session_state.access_mode in ACCESSIBILITY_MODES else 0,
-            horizontal=True,
-            key="top_access_mode_radio",
-            label_visibility="collapsed"
-        )
-        if top_access != st.session_state.access_mode:
-            st.session_state.access_mode = top_access
-            if top_access == "Blind Assist Mode":
-                st.session_state.should_announce_blind = True
-            st.rerun()
-
-    with top_col2:
-        st.markdown("**🎙️ Universal Voice Assistant**")
-        v_col1, v_col2 = st.columns(2)
-        with v_col1:
-            if st.button("🔊 Read Screen", key="top_speak_btn", type="primary", use_container_width=True):
-                if st.session_state.access_mode == "Blind Assist Mode":
-                    play_speech(t["blind_welcome_speech"], st.session_state.lang)
-                elif st.session_state.access_mode == "Dyslexia Mode":
-                    play_speech("Dyslexia mode active. Lexend typography and mirror cue highlighting are enabled. You can use standard login or one tap face biometric login.", st.session_state.lang)
-                else:
-                    play_speech(t["speech_text"], st.session_state.lang)
-        with v_col2:
-            if st.button(t["stop_btn"], key="top_stop_btn", type="secondary", use_container_width=True):
-                stop_speech()
-                
-    st.caption("⌨️ Laptop Shortcuts: Press Alt + B for Blind Mode • Alt + D for Dyslexia Mode • Alt + S for Standard Mode • Press Tab to navigate")
-
 # Blind Mode Audio Auto-Announcement
 if st.session_state.access_mode == "Blind Assist Mode":
     if st.session_state.get("should_announce_blind", False):
@@ -992,18 +969,13 @@ st.markdown(f"""
 # Active Mode Banner
 if st.session_state.access_mode == "Dyslexia Mode":
     st.markdown(f"""
-    <div style="background-color: {card_bg}; border: 1.5px solid #2563eb; border-radius: 12px; padding: 12px 18px; margin: 10px 0 18px 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+    <div style="background-color: {card_bg}; border: 1.5px solid #2563eb; border-radius: 12px; padding: 14px 20px; margin: 10px 0 18px 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
         <div>
-            <strong style="color: #2563eb; font-size: 1.02rem;">🔤 Dyslexia Mode Active</strong>
-            <div style="font-size: 0.88rem; color: {sub_color}; margin-top: 2px;">Lexend Typography • Wide Letter Spacing • Warm Contrast Tint</div>
+            <strong style="color: #2563eb; font-size: 1.05rem;">🔤 Dyslexia Mode Active</strong>
+            <div style="font-size: 0.9rem; color: {sub_color}; margin-top: 3px;">Lexend Typography • Wide Letter Spacing • Warm Contrast Tint</div>
         </div>
-        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;">
-            <span style="background: rgba(37,99,235,0.12); color: #2563eb; font-weight: 700; padding: 3px 8px; border-radius: 4px;">b Blue</span>
-            <span style="background: rgba(22,163,74,0.12); color: #16a34a; font-weight: 700; padding: 3px 8px; border-radius: 4px;">d Green</span>
-            <span style="background: rgba(147,51,234,0.12); color: #9333ea; font-weight: 700; padding: 3px 8px; border-radius: 4px;">p Purple</span>
-            <span style="background: rgba(234,88,12,0.12); color: #ea580c; font-weight: 700; padding: 3px 8px; border-radius: 4px;">q Orange</span>
-            <span style="background: rgba(217,119,6,0.12); color: #d97706; font-weight: 700; padding: 3px 8px; border-radius: 4px;">m Amber</span>
-            <span style="background: rgba(220,38,38,0.12); color: #dc2626; font-weight: 700; padding: 3px 8px; border-radius: 4px;">w Red</span>
+        <div>
+            <span class="status-pill pill-green">High Readability Enabled</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -1319,38 +1291,29 @@ with tab_login:
 
     # STANDARD LOGIN (< 3 attempts)
     else:
-        # Audio & Accessibility assistance banner right before the login form
-        col_audio1, col_audio2 = st.columns([2.5, 1.5])
-        with col_audio1:
-            if st.session_state.access_mode == "Dyslexia Mode":
-                st.caption("🔤 Dyslexia Mode: Wide letter spacing and mirror-cue guidance enabled.")
-            elif st.session_state.access_mode == "Blind Assist Mode":
-                st.caption("👁️ Blind Assist Mode: Audio assistance ready.")
-        with col_audio2:
-            if st.button("🔊 Read Security Code", key="btn_read_captcha_top", type="secondary", use_container_width=True):
-                play_speech(f"Security challenge. What is {st.session_state.captcha_q}", st.session_state.lang)
+        if st.session_state.access_mode == "Dyslexia Mode":
+            st.caption("🔤 Dyslexia Mode: Wide letter spacing and high readability typography enabled.")
 
         with st.form("login_form"):
             login_email = st.text_input(t["email"], placeholder="name@example.com")
             login_password = st.text_input(t["password"], type="password", placeholder="••••••••")
             
             st.markdown(f"**{t['captcha_label']}:**")
-            col_c1, col_c2 = st.columns([1, 2])
+            col_c1, col_c2 = st.columns([1.2, 2])
             with col_c1:
-                st.info(f"🧮 What is **{st.session_state.captcha_q}** ?")
+                st.markdown(f"""
+                <div style="background: {'#1e293b' if not is_light else '#f1f5f9'}; border: 1.5px solid {'#475569' if not is_light else '#cbd5e1'}; border-radius: 8px; padding: 10px 14px; text-align: center; letter-spacing: 5px; font-family: monospace; font-size: 1.25rem; font-weight: 800; color: {'#38bdf8' if not is_light else '#0284c7'}; user-select: none;">
+                    {st.session_state.captcha_q}
+                </div>
+                """, unsafe_allow_html=True)
             with col_c2:
-                captcha_input = st.text_input("Captcha Result", placeholder="Enter answer", label_visibility="collapsed")
+                captcha_input = st.text_input("Security Code", placeholder="Enter 5-character code", label_visibility="collapsed")
             
             submit_login = st.form_submit_button(t["login_btn"], type="primary", use_container_width=True)
             
             if submit_login:
                 # 1. Validate CAPTCHA
-                captcha_valid = False
-                try:
-                    if int(captcha_input.strip()) == st.session_state.captcha_a:
-                        captcha_valid = True
-                except:
-                    captcha_valid = False
+                captcha_valid = (captcha_input.strip().upper() == str(st.session_state.captcha_a).strip().upper())
                 
                 # 2. Check credentials
                 user = db.get_user_by_email(login_email)
