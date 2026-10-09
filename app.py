@@ -150,7 +150,8 @@ FONT_OPTIONS = [
 ACCESSIBILITY_MODES = [
     "Blind Assist Mode",
     "Standard Mode",
-    "Dyslexia Mode"
+    "Dyslexia Mode",
+    "Motor & Tremor Assist"
 ]
 
 if "lang" not in st.session_state or st.session_state.lang not in AVAILABLE_LANGUAGES:
@@ -202,7 +203,9 @@ f_scale = f_map.get(st.session_state.font_scale, 1.20)
 
 is_dyslexia = (st.session_state.access_mode == "Dyslexia Mode")
 is_blind = (st.session_state.access_mode == "Blind Assist Mode")
+is_tremor = (st.session_state.access_mode == "Motor & Tremor Assist")
 is_light = (st.session_state.theme_mode == "Light")
+
 
 # Typography & Spacing Rules
 if is_dyslexia:
@@ -723,10 +726,11 @@ with st.sidebar:
     mode_map = {
         "Blind Assist Mode": f"👁️ {t['mode_blind']}",
         "Standard Mode": f"👤 {t['mode_standard']}",
-        "Dyslexia Mode": f"🔤 {t['mode_dyslexia']}"
+        "Dyslexia Mode": f"🔤 {t['mode_dyslexia']}",
+        "Motor & Tremor Assist": f"🦾 {t['mode_tremor']}"
     }
     inv_mode_map = {v: k for k, v in mode_map.items()}
-    mode_options = [mode_map["Blind Assist Mode"], mode_map["Standard Mode"], mode_map["Dyslexia Mode"]]
+    mode_options = [mode_map["Blind Assist Mode"], mode_map["Standard Mode"], mode_map["Dyslexia Mode"], mode_map["Motor & Tremor Assist"]]
     cur_mode_disp = mode_map.get(st.session_state.access_mode, mode_options[0])
     selected_mode_disp = st.radio(
         t["sidebar_access_label"],
@@ -741,6 +745,7 @@ with st.sidebar:
         if new_mode == "Blind Assist Mode":
             st.session_state.should_announce_blind = True
         st.rerun()
+
 
     st.markdown("---")
     # 3. THEME SELECTOR (Strictly translated)
@@ -843,40 +848,17 @@ components.html(f"""
 
         function getElementDescription(el) {{
             if (!el) return "";
-            var text = "";
             
             // Radio option
             var radio = el.closest('[data-baseweb="radio"]') || el.closest('label');
             if (radio && radio.innerText) {{
-                return "Accessibility Option " + radio.innerText.trim();
+                return radio.innerText.trim();
             }}
             
             // Buttons
             if (el.tagName === 'BUTTON' || el.getAttribute('role') === 'button') {{
                 var btnTxt = (el.innerText || el.getAttribute('aria-label') || "").trim();
-                if (btnTxt.includes("Read Screen") || btnTxt.includes("Read")) {{
-                    return "Read Screen button. Press Enter to listen.";
-                }} else if (btnTxt.includes("Stop")) {{
-                    return "Stop Audio button. Press Enter to stop.";
-                }} else if (btnTxt.includes("Voice Instructions")) {{
-                    return "Voice Instructions button. Press Enter to hear camera guide.";
-                }} else if (btnTxt.includes("Play Audio Pulses")) {{
-                    return "Play Audio Pulses challenge button. Press Enter to listen to beeps.";
-                }} else if (btnTxt.includes("New Challenge")) {{
-                    return "New Audio Challenge button. Press Enter to generate new sounds.";
-                }} else if (btnTxt.includes("Pulses")) {{
-                    return "Option " + btnTxt + " button. Press Enter to submit answer.";
-                }} else if (btnTxt.includes("Take Photo")) {{
-                    return "Take photo button. Press Enter or Space to capture.";
-                }} else if (btnTxt.includes("Clear photo")) {{
-                    return "Clear photo button. Press Enter to retake.";
-                }} else if (btnTxt.includes("Register")) {{
-                    return "Register account button. Press Enter to submit.";
-                }} else if (btnTxt.includes("Log In") || btnTxt.includes("Login")) {{
-                    return "Log In button. Press Enter to authenticate.";
-                }} else {{
-                    return btnTxt + " button. Press Enter to activate.";
-                }}
+                return btnTxt;
             }}
             
             // Inputs
@@ -884,18 +866,18 @@ components.html(f"""
                 var widget = el.closest('div[data-testid="stTextInput"]') || el.closest('div[data-testid="stWidgetLabel"]') || el.parentElement;
                 var widgetLabel = widget ? widget.innerText.split('\\n')[0] : "";
                 var ph = el.getAttribute('placeholder') || "";
-                var name = widgetLabel || ph || el.type || "text";
-                return name + " input field. Type your value.";
+                return widgetLabel || ph || el.type || "";
             }}
             
             // Camera input container
             if (el.closest('div[data-testid="stCameraInput"]')) {{
-                return "Camera face scanner with circular guide. Position face inside circle and press Enter to capture.";
+                var camLabel = el.closest('div[data-testid="stCameraInput"]').innerText.split('\\n')[0];
+                return camLabel || "";
             }}
             
             // Selectbox
             if (el.closest('div[data-testid="stSelectbox"]')) {{
-                return (el.innerText || "Language") + " dropdown. Press Enter to select.";
+                return (el.innerText || "").trim();
             }}
             
             if (el.getAttribute('aria-label')) {{
@@ -904,6 +886,18 @@ components.html(f"""
             
             return "";
         }}
+
+        // Motor and hand tremor anti-jitter debounce (350ms click stabilizer)
+        var lastClickTime = 0;
+        doc.addEventListener('click', function(e) {{
+            var now = Date.now();
+            if (now - lastClickTime < 350 && (e.target.tagName === 'BUTTON' || e.target.closest('button'))) {{
+                e.stopPropagation();
+                return;
+            }}
+            lastClickTime = now;
+        }}, true);
+
 
         // Live Tab & Focus Event Listener
         doc.addEventListener('focusin', function(e) {{
@@ -1027,6 +1021,19 @@ if st.session_state.access_mode == "Dyslexia Mode":
         </div>
     </div>
     """, unsafe_allow_html=True)
+elif st.session_state.access_mode == "Motor & Tremor Assist":
+    st.markdown(f"""
+    <div style="background-color: {card_bg}; border: 2px solid #10b981; border-radius: 12px; padding: 14px 20px; margin: 10px 0 18px 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+        <div>
+            <strong style="color: #10b981; font-size: 1.05rem;">🦾 {t['tremor_banner_title']}</strong>
+            <div style="font-size: 0.9rem; color: {sub_color}; margin-top: 3px;">{t['tremor_banner_sub']}</div>
+        </div>
+        <div>
+            <span class="status-pill pill-green">{t['tremor_banner_badge']}</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
 # ----------------- LOGGED IN DASHBOARD -----------------
 if st.session_state.logged_in_user:
     user = st.session_state.logged_in_user
@@ -1076,7 +1083,7 @@ if st.session_state.logged_in_user:
 # ===============================================================
 if st.session_state.access_mode == "Blind Assist Mode":
     st.markdown(f"""
-    <div style="background-color: {card_bg}; border: 3px solid {'#f59e0b' if is_light else '#fbbf24'}; border-radius: 14px; padding: 18px 22px; margin: 8px 0 22px 0;">
+    <div style="background-color: {card_bg}; border: 3px solid {'#f59e0b' if is_light else '#fbbf24'}; border-radius: 14px; padding: 18px 22px; margin: 8px 0 18px 0;">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
             <div>
                 <h3 style="margin: 0; color: {'#000000' if is_light else '#ffffff'};">👁️ {t['blind_console_title']}</h3>
@@ -1088,13 +1095,114 @@ if st.session_state.access_mode == "Blind Assist Mode":
         </div>
     </div>
     """, unsafe_allow_html=True)
-    
+
     if "blind_flash_active" not in st.session_state:
         st.session_state.blind_flash_active = False
 
-    # 1. ONE-TAP FACE BIOMETRIC LOGIN
+    # 1. LANGUAGE SELECTION (ASK LANGUAGE + 1-TAP CHIPS + VOICE PRONUNCIATION MIC)
     with st.container(border=True):
-        st.markdown(f"### 📸 {t['blind_face_login_title']}")
+        st.markdown(f"#### 🌐 {t['blind_lang_prompt']}")
+        
+        lang_cols = st.columns([1.2, 1.2, 1.2, 1.2, 1.6])
+        quick_langs = ["Tamil", "English", "Hindi", "Telugu"]
+        for c, l_name in zip(lang_cols[:4], quick_langs):
+            with c:
+                disp_l = LANGUAGE_DISPLAY[l_name]
+                is_active_l = (st.session_state.lang == l_name)
+                btn_type = "primary" if is_active_l else "secondary"
+                if st.button(f"{'👉 ' if is_active_l else ''}{disp_l}", key=f"blind_lang_btn_{l_name}", type=btn_type, use_container_width=True):
+                    if st.session_state.lang != l_name:
+                        st.session_state.lang = l_name
+                        st.session_state.should_announce_blind = True
+                        st.rerun()
+
+        with lang_cols[4]:
+            components.html(f"""
+            <div style="display: flex; align-items: center; justify-content: center; height: 100%;">
+                <button id="voiceLangMicBtn" style="width: 100%; height: 42px; background: #2563eb; color: #ffffff; border: none; border-radius: 8px; font-weight: 700; font-size: 0.95rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    {t['blind_speak_mic_btn']}
+                </button>
+            </div>
+            <script>
+            (function() {{
+                var btn = document.getElementById("voiceLangMicBtn");
+                if (!btn) return;
+                btn.onclick = function() {{
+                    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                    if (!SpeechRecognition) {{
+                        alert("Speech recognition not supported in this browser. Please click the language buttons directly.");
+                        return;
+                    }}
+                    var recog = new SpeechRecognition();
+                    recog.lang = "en-US";
+                    btn.innerText = "Listening...";
+                    btn.style.background = "#dc2626";
+                    recog.onresult = function(e) {{
+                        var transcript = e.results[0][0].transcript.toLowerCase();
+                        var targetLang = "";
+                        if (transcript.includes("tamil") || transcript.includes("தமிழ்")) targetLang = "Tamil";
+                        else if (transcript.includes("hindi") || transcript.includes("हिन्दी")) targetLang = "Hindi";
+                        else if (transcript.includes("telugu") || transcript.includes("తెలుగు")) targetLang = "Telugu";
+                        else if (transcript.includes("english")) targetLang = "English";
+                        
+                        if (targetLang) {{
+                            btn.innerText = "OK " + targetLang;
+                            var pDoc = (window.parent && window.parent.document) || document;
+                            var allBtns = pDoc.querySelectorAll('button');
+                            for (var i = 0; i < allBtns.length; i++) {{
+                                if (allBtns[i].innerText && allBtns[i].innerText.includes(targetLang)) {{
+                                    allBtns[i].click();
+                                    break;
+                                }}
+                            }}
+                        }} else {{
+                            btn.innerText = "{t['blind_speak_mic_btn']}";
+                            btn.style.background = "#2563eb";
+                        }}
+                    }};
+                    recog.onerror = function() {{
+                        btn.innerText = "{t['blind_speak_mic_btn']}";
+                        btn.style.background = "#2563eb";
+                    }};
+                    recog.start();
+                }};
+            }})();
+            </script>
+            """, height=48)
+
+    # 2. STEP 1: PHONE NUMBER AS USERNAME
+    with st.container(border=True):
+        st.markdown(f"#### 📱 {t['blind_step1_phone_title']}")
+        st.caption(t["blind_phone_prompt"])
+        
+        all_face_users = db.get_all_users_with_face()
+        if all_face_users:
+            u_cols = st.columns(min(3, len(all_face_users)))
+            for col_u, u_rec in zip(u_cols, all_face_users[:3]):
+                with col_u:
+                    if st.button(f"👤 {u_rec['phone']} • {u_rec['fullname']}", key=f"sel_quick_u_{u_rec['id']}", use_container_width=True):
+                        st.session_state.blind_phone_input = u_rec['phone']
+                        st.rerun()
+
+        blind_phone = st.text_input(
+            t["phone"],
+            value=st.session_state.get("blind_phone_input", ""),
+            placeholder="8373903823",
+            key="blind_phone_input_field"
+        )
+        if blind_phone != st.session_state.get("blind_phone_input", ""):
+            st.session_state.blind_phone_input = blind_phone
+
+        identified_user = db.get_user_by_phone(blind_phone) if blind_phone.strip() else None
+        if blind_phone.strip():
+            if identified_user:
+                st.success(f"✅ {t['blind_user_found'].format(identified_user['fullname'])}")
+            else:
+                st.info(f"ℹ️ {t['blind_user_not_found']}")
+
+    # 3. STEP 2: POSITION FACE INSIDE CIRCULAR VIEWFINDER
+    with st.container(border=True):
+        st.markdown(f"#### 📸 {t['blind_step2_face_title']}")
         st.write(t["blind_face_login_desc"])
         
         col_b_cam1, col_b_cam2 = st.columns([3, 1.4])
@@ -1117,138 +1225,64 @@ if st.session_state.access_mode == "Blind Assist Mode":
                 blind_face_cam = st.camera_input(t["scan_face_label"], key="blind_main_face_cam")
 
         if blind_face_cam:
-            spatial_b = analyze_face_spatial_guidance(blind_face_cam)
-            if spatial_b["status"] == "TOO_DARK":
-                st.session_state.blind_flash_active = True
-                v_dark = get_spatial_voice_text("TOO_DARK", st.session_state.lang)
-                st.warning(f"💡 {v_dark}")
-                play_speech(v_dark, st.session_state.lang)
-                st.rerun()
-            elif not spatial_b["is_ready"]:
-                v_msg_b = get_spatial_voice_text(spatial_b["status"], st.session_state.lang)
-                st.error(f"⚠️ {v_msg_b}")
-                play_speech(v_msg_b, st.session_state.lang)
-                db.log_security_event("NO_FACE_REJECTED", user_email="", ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=20, details=f"Face guidance not ready: {spatial_b['status']}")
+            if not blind_phone.strip():
+                st.warning(f"⚠️ {t['blind_enter_phone_first']}")
+                play_speech(t["blind_enter_phone_first"], st.session_state.lang)
             else:
-                centered_txt = get_spatial_voice_text("CENTERED", st.session_state.lang)
-                st.info(f"✅ {centered_txt}")
-                play_speech(centered_txt, st.session_state.lang)
-                
-                # Automatically check against all enrolled faces in database
-                all_users = db.get_all_users_with_face()
-                best_match = None
-                best_score = 0.0
-                for u in all_users:
-                    matched, msg, score = compare_faces(u["face_data"], blind_face_cam, threshold=0.45)
-                    if matched and score > best_score:
-                        best_match = u
-                        best_score = score
-                
-                if best_match:
-                    zt_eval = PassiveRiskEngine.evaluate_zero_trust("127.0.0.1", st.session_state.device_fingerprint, 0)
-                    st.session_state.zt_score = zt_eval["score"]
-                    db.log_security_event("AUTH_SUCCESS_BIOMETRIC", user_email=best_match["email"], ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=zt_eval["score"], details="One-Tap Blind Face Login Verified")
-                    st.success(f"✅ {t['face_verified_msg']} {best_match['fullname']}!")
-                    welcome_back = f"{t['face_verified_msg']} {best_match['fullname']}"
-                    play_speech(welcome_back, st.session_state.lang)
-                    st.session_state.login_attempts = 0
-                    db.reset_failed_attempts(best_match["email"])
-                    st.session_state.logged_in_user = dict(best_match)
+                spatial_b = analyze_face_spatial_guidance(blind_face_cam)
+                if spatial_b["status"] == "TOO_DARK":
+                    st.session_state.blind_flash_active = True
+                    v_dark = get_spatial_voice_text("TOO_DARK", st.session_state.lang)
+                    st.warning(f"💡 {v_dark}")
+                    play_speech(v_dark, st.session_state.lang)
                     st.rerun()
+                elif not spatial_b["is_ready"]:
+                    v_msg_b = get_spatial_voice_text(spatial_b["status"], st.session_state.lang)
+                    st.error(f"⚠️ {v_msg_b}")
+                    play_speech(v_msg_b, st.session_state.lang)
+                    db.log_security_event("NO_FACE_REJECTED", user_email=blind_phone, ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=20, details=f"Face guidance not ready: {spatial_b['status']}")
                 else:
-                    db.log_security_event("BIOMETRIC_MISMATCH", user_email="", ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=60, details="Face feature distance below threshold")
-                    st.error(f"❌ {t['face_mismatch_msg']}")
-                    play_speech(t["face_mismatch_msg"], st.session_state.lang)
-
-    # 2. ACOUSTIC SECURITY VIBRATION CHALLENGE
-    with st.container(border=True):
-        st.markdown(f"### 📳 {t['acoustic_challenge_title']}")
-        st.write(t["acoustic_challenge_desc"])
-        
-        col_p1, col_p2 = st.columns([1.5, 1])
-        with col_p1:
-            if st.button(f"🔊 {t['play_pulses_btn']}", key="blind_play_pulses_btn", type="primary", use_container_width=True):
-                play_audio_pulses(st.session_state.audio_pulse_count)
-                play_speech(t["audio_challenge_prompt"], st.session_state.lang)
-        with col_p2:
-            if st.button(f"🔄 {t['new_challenge_btn']}", key="blind_new_pulses_btn", type="secondary", use_container_width=True):
-                st.session_state.audio_pulse_count = random.choice([2, 3, 4, 5])
-                st.session_state.blind_challenge_solved = False
-                st.rerun()
-
-        st.markdown(f"**{t['how_many_pulses']}**")
-        p_c1, p_c2, p_c3, p_c4 = st.columns(4)
-        for col, count_val in zip([p_c1, p_c2, p_c3, p_c4], [2, 3, 4, 5]):
-            with col:
-                if st.button(f"{count_val} {t['pulses_unit']}", key=f"pulse_sel_{count_val}", use_container_width=True):
-                    if count_val == st.session_state.audio_pulse_count:
-                        st.session_state.blind_challenge_solved = True
-                        db.log_security_event("ACOUSTIC_CHALLENGE_SOLVED", user_email="", ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=5, details=f"Pulse count {st.session_state.audio_pulse_count} verified")
-                        play_speech(t["audio_challenge_pass"], st.session_state.lang)
-                        st.rerun()
-                    else:
-                        db.log_security_event("ACOUSTIC_CHALLENGE_FAILED", user_email="", ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=35, details="Incorrect pulse count entered")
-                        play_speech(t["acoustic_fail_msg"], st.session_state.lang)
-                        st.error(t["acoustic_fail_msg"])
-
-        if st.session_state.blind_challenge_solved:
-            st.success(f"✅ {t['acoustic_pass_msg']}")
-
-    # 3. REGISTER NEW USER (SIGN UP)
-    with st.expander(f"📝 {t['reg_face_title']}", expanded=False):
-        st.write(t["reg_face_sub"])
-        b_su_name = st.text_input(f"{t['fullname']} *", placeholder=t["fullname"], key="b_su_name")
-        b_su_email = st.text_input(f"{t['email']} *", placeholder="name@example.com", key="b_su_email")
-        b_su_phone = st.text_input(f"{t['phone']} *", placeholder="+91 9876543210", key="b_su_phone")
-        b_su_pass = st.text_input(f"{t['password']} *", type="password", placeholder="••••••••", key="b_su_pass")
-        b_su_cam = st.camera_input(t["capture_face_enroll"], key="b_su_cam")
-        if b_su_cam:
-            sp_su = analyze_face_spatial_guidance(b_su_cam)
-            if not sp_su["is_ready"]:
-                st.warning(get_spatial_voice_text(sp_su["status"], st.session_state.lang))
-            else:
-                st.info(get_spatial_voice_text("CENTERED", st.session_state.lang))
-        if st.button(t["signup_btn"], key="b_su_btn", type="primary", use_container_width=True):
-            if not b_su_name or not b_su_email or not b_su_pass or not b_su_cam:
-                st.error(t["err_missing_fields"])
-            else:
-                sp_su = analyze_face_spatial_guidance(b_su_cam)
-                if not sp_su["is_ready"]:
-                    st.error(get_spatial_voice_text(sp_su["status"], st.session_state.lang))
-                    play_speech(get_spatial_voice_text(sp_su["status"], st.session_state.lang), st.session_state.lang)
-                else:
-                    ok, face_res = extract_face_features(b_su_cam)
-                    if ok:
-                        reg_ok, reg_msg = db.register_user(b_su_name, b_su_email, b_su_phone, b_su_pass, face_res)
-                        if reg_ok:
-                            st.success(t["signup_success"])
-                            play_speech(f"{t['signup_success']} {b_su_name}", st.session_state.lang)
+                    # FACE IS CENTERED INSIDE THE ROUND CIRCLE!
+                    centered_txt = get_spatial_voice_text("CENTERED", st.session_state.lang)
+                    st.success(f"✅ {centered_txt}")
+                    play_speech(centered_txt, st.session_state.lang)
+                    
+                    if identified_user and identified_user.get("face_data"):
+                        matched, msg, score = compare_faces(identified_user["face_data"], blind_face_cam, threshold=0.45)
+                        if matched:
+                            zt_eval = PassiveRiskEngine.evaluate_zero_trust("127.0.0.1", st.session_state.device_fingerprint, 0)
+                            st.session_state.zt_score = zt_eval["score"]
+                            db.log_security_event("AUTH_SUCCESS_BIOMETRIC", user_email=identified_user["email"], ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=zt_eval["score"], details=f"Phone Face Login Verified for {identified_user['fullname']}")
+                            st.success(f"✅ {t['face_verified_msg']} {identified_user['fullname']}!")
+                            welcome_back = f"{t['face_verified_msg']} {identified_user['fullname']}"
+                            play_speech(welcome_back, st.session_state.lang)
+                            st.session_state.login_attempts = 0
+                            db.reset_failed_attempts(identified_user["email"])
+                            st.session_state.logged_in_user = dict(identified_user)
+                            st.rerun()
                         else:
-                            st.error(reg_msg)
+                            db.log_security_event("BIOMETRIC_MISMATCH", user_email=identified_user["email"], ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=60, details="Face feature distance below threshold")
+                            st.error(f"❌ {t['face_mismatch_msg']}")
+                            play_speech(t["face_mismatch_msg"], st.session_state.lang)
                     else:
-                        st.error(t["err_face_missing"])
-
-    # 4. MANUAL CREDENTIALS LOGIN FOR ASSISTED ACCESS
-    with st.expander(f"📝 {t['manual_login_title']}", expanded=False):
-        st.write(t["manual_login_sub"])
-        with st.form("blind_assisted_login_form"):
-            b_email = st.text_input(t["email"], placeholder="name@example.com", key="b_login_email")
-            b_password = st.text_input(t["password"], type="password", placeholder="••••••••", key="b_login_pass")
-            b_submit = st.form_submit_button(t["login_btn"], type="primary", use_container_width=True)
-            if b_submit:
-                user = db.get_user_by_email(b_email)
-                if user and db.verify_password(b_password, user["salt"], user["password_hash"]):
-                    st.success(f"✅ {t['face_verified_msg']} {user['fullname']}!")
-                    st.session_state.login_attempts = 0
-                    db.reset_failed_attempts(b_email)
-                    st.session_state.logged_in_user = dict(user)
-                    st.rerun()
-                else:
-                    st.error(t["err_invalid_login"])
+                        ok_enc, enc_face = extract_face_features(blind_face_cam)
+                        if ok_enc:
+                            reg_ok, reg_m = db.register_phone_user(f"User {blind_phone[-4:]}", blind_phone, enc_face)
+                            if reg_ok:
+                                new_u = db.get_user_by_phone(blind_phone)
+                                st.success(f"🎉 {t['signup_success']}")
+                                play_speech(f"{t['signup_success']}", st.session_state.lang)
+                                st.session_state.logged_in_user = dict(new_u) if new_u else {"fullname": f"User {blind_phone[-4:]}", "phone": blind_phone, "email": f"{blind_phone}@accessauth.local"}
+                                st.rerun()
+                            else:
+                                st.error(f"❌ {reg_m}")
+                        else:
+                            st.error(t["err_face_missing"])
 
     st.markdown("---")
     st.caption(f"🔒 PS05: {t['title']} • {t['footer_caption']}")
     st.stop()
+
 
 # ----------------- MAIN TABS -----------------
 tab_login, tab_signup, tab_guide = st.tabs([
@@ -1385,20 +1419,49 @@ with tab_login:
         if st.session_state.access_mode == "Dyslexia Mode":
             st.caption("🔤 Dyslexia Mode: Wide letter spacing and high readability typography enabled.")
 
+        use_symbol_captcha = (st.session_state.access_mode == "Dyslexia Mode" or st.session_state.login_attempts >= 2)
+        
+        SYMBOLS_POOL = [
+            {"name": "Star", "icon": "⭐", "key": "symbol_star"},
+            {"name": "Sun", "icon": "☀️", "key": "symbol_sun"},
+            {"name": "Moon", "icon": "🌙", "key": "symbol_moon"},
+            {"name": "Flower", "icon": "🌸", "key": "symbol_flower"},
+            {"name": "Apple", "icon": "🍎", "key": "symbol_apple"},
+            {"name": "Car", "icon": "🚗", "key": "symbol_car"}
+        ]
+        if "symbol_captcha_target" not in st.session_state:
+            st.session_state.symbol_captcha_target = random.choice(SYMBOLS_POOL)
+            cand = [s for s in SYMBOLS_POOL if s["key"] != st.session_state.symbol_captcha_target["key"]]
+            opts = random.sample(cand, 3) + [st.session_state.symbol_captcha_target]
+            random.shuffle(opts)
+            st.session_state.symbol_captcha_options = opts
+
         with st.form("login_form"):
             login_email = st.text_input(t["email"], placeholder="name@example.com")
             login_password = st.text_input(t["password"], type="password", placeholder="••••••••")
             
-            st.markdown(f"**{t['captcha_label']}:**")
-            col_c1, col_c2 = st.columns([1.2, 2])
-            with col_c1:
-                st.markdown(f"""
-                <div style="background: {'#1e293b' if not is_light else '#f1f5f9'}; border: 1.5px solid {'#475569' if not is_light else '#cbd5e1'}; border-radius: 8px; padding: 10px 14px; text-align: center; letter-spacing: 5px; font-family: monospace; font-size: 1.25rem; font-weight: 800; color: {'#38bdf8' if not is_light else '#0284c7'}; user-select: none;">
-                    {st.session_state.captcha_q}
-                </div>
-                """, unsafe_allow_html=True)
-            with col_c2:
-                captcha_input = st.text_input("Security Code", placeholder="Enter 5-character code", label_visibility="collapsed")
+            if use_symbol_captcha:
+                target_sym = st.session_state.symbol_captcha_target
+                target_label = t.get(target_sym["key"], f"{target_sym['name']} {target_sym['icon']}")
+                st.markdown(f"**🎯 {t['dyslexia_symbol_prompt'].format(target_label)}:**")
+                sym_labels = [f"{s['icon']} {t.get(s['key'], s['name'])}" for s in st.session_state.symbol_captcha_options]
+                selected_sym = st.radio(
+                    "Symbol CAPTCHA",
+                    options=sym_labels,
+                    horizontal=True,
+                    label_visibility="collapsed"
+                )
+            else:
+                st.markdown(f"**{t['captcha_label']}:**")
+                col_c1, col_c2 = st.columns([1.2, 2])
+                with col_c1:
+                    st.markdown(f"""
+                    <div style="background: {'#1e293b' if not is_light else '#f1f5f9'}; border: 1.5px solid {'#475569' if not is_light else '#cbd5e1'}; border-radius: 8px; padding: 10px 14px; text-align: center; letter-spacing: 5px; font-family: monospace; font-size: 1.25rem; font-weight: 800; color: {'#38bdf8' if not is_light else '#0284c7'}; user-select: none;">
+                        {st.session_state.captcha_q}
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col_c2:
+                    captcha_input = st.text_input("Security Code", placeholder="Enter 5-character code", label_visibility="collapsed")
             
             submit_login = st.form_submit_button(t["login_btn"], type="primary", use_container_width=True)
             
@@ -1410,7 +1473,10 @@ with tab_login:
                     st.stop()
 
                 # 1. Validate CAPTCHA
-                captcha_valid = (captcha_input.strip().upper() == str(st.session_state.captcha_a).strip().upper())
+                if use_symbol_captcha:
+                    captcha_valid = (st.session_state.symbol_captcha_target["icon"] in selected_sym)
+                else:
+                    captcha_valid = (captcha_input.strip().upper() == str(st.session_state.captcha_a).strip().upper())
                 
                 # 2. Check credentials
                 user = db.get_user_by_email(login_email)
@@ -1422,7 +1488,7 @@ with tab_login:
                     zt_eval = PassiveRiskEngine.evaluate_zero_trust("127.0.0.1", st.session_state.device_fingerprint, 0)
                     st.session_state.zt_score = zt_eval["score"]
                     db.log_security_event("AUTH_SUCCESS_PASSWORD", user_email=login_email, ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=zt_eval["score"], details="Password and CAPTCHA authenticated")
-                    st.success("✅ Login successful!")
+                    st.success(f"✅ {t['face_verified_msg']} {user['fullname']}!")
                     st.session_state.login_attempts = 0
                     db.reset_failed_attempts(login_email)
                     st.session_state.logged_in_user = dict(user)
@@ -1431,10 +1497,21 @@ with tab_login:
                     st.session_state.login_attempts += 1
                     st.session_state.target_email_locked = login_email
                     st.session_state.captcha_q, st.session_state.captcha_a = FrictionEngine.generate_captcha()
+                    # Reshuffle symbol captcha
+                    st.session_state.symbol_captcha_target = random.choice(SYMBOLS_POOL)
+                    cand = [s for s in SYMBOLS_POOL if s["key"] != st.session_state.symbol_captcha_target["key"]]
+                    opts = random.sample(cand, 3) + [st.session_state.symbol_captcha_target]
+                    random.shuffle(opts)
+                    st.session_state.symbol_captcha_options = opts
+
                     db.log_security_event("AUTH_FAILED", user_email=login_email, ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=min(90, 30 * st.session_state.login_attempts), details=f"Failed attempt {st.session_state.login_attempts}")
-                    st.error(t["err_invalid_login"])
+                    if not captcha_valid:
+                        st.error(t["symbol_captcha_fail"] if use_symbol_captcha else t["err_invalid_login"])
+                    else:
+                        st.error(t["err_invalid_login"])
                     st.warning(t["attempts_warning"].format(st.session_state.login_attempts))
                     st.rerun()
+
 
         # DIVIDER: OR
         st.markdown(f"""

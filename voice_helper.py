@@ -65,12 +65,34 @@ def play_speech(text: str, language_name: str = "English"):
             b64_audio = None
 
     if b64_audio:
-        # Primary: HTML5 Audio stream
+        # Primary: HTML5 Audio stream with immediate SpeechSynthesis fallback
         html_code = f"""
         <div style="display:none;">
             <audio id="activeVoicePlayer" autoplay src="data:audio/mp3;base64,{b64_audio}"></audio>
             <script>
                 (function() {{
+                    function fallbackSpeak() {{
+                        try {{
+                            var synth = (window.parent && window.parent.speechSynthesis) || window.speechSynthesis;
+                            if (synth) {{
+                                synth.cancel();
+                                var u = new SpeechSynthesisUtterance("{clean_text}");
+                                u.lang = "{web_code}";
+                                u.rate = 1.0;
+                                var voices = synth.getVoices() || [];
+                                var target = "{web_code}".toLowerCase();
+                                var prefix = target.split("-")[0];
+                                var matched = voices.find(function(v) {{
+                                    return v.lang && v.lang.toLowerCase() === target;
+                                }}) || voices.find(function(v) {{
+                                    return v.lang && v.lang.toLowerCase().startsWith(prefix);
+                                }});
+                                if (matched) u.voice = matched;
+                                synth.speak(u);
+                            }}
+                        }} catch(err) {{}}
+                    }}
+
                     try {{
                         var doc = (window.parent && window.parent.document) || document;
                         var oldAudio = doc.getElementById("globalVoicePlayer");
@@ -82,18 +104,25 @@ def play_speech(text: str, language_name: str = "English"):
                         if (audio) {{
                             audio.id = "globalVoicePlayer";
                             doc.body.appendChild(audio);
-                            audio.play().catch(function(e) {{
-                                console.warn("Autoplay audio handled:", e);
-                            }});
+                            var playPromise = audio.play();
+                            if (playPromise !== undefined) {{
+                                playPromise.catch(function(e) {{
+                                    fallbackSpeak();
+                                }});
+                            }}
+                        }} else {{
+                            fallbackSpeak();
                         }}
-                    }} catch(e) {{}}
+                    }} catch(e) {{
+                        fallbackSpeak();
+                    }}
                 }})();
             </script>
         </div>
         """
         components.html(html_code, height=0, width=0)
     else:
-        # Secondary Fallback: Browser Web Speech API
+        # Secondary Fallback: Direct Browser Web Speech API
         html_code = f"""
         <script>
             (function() {{
@@ -103,25 +132,37 @@ def play_speech(text: str, language_name: str = "English"):
                         synth.cancel();
                         var utterance = new SpeechSynthesisUtterance("{clean_text}");
                         utterance.lang = "{web_code}";
-                        utterance.rate = 0.95;
+                        utterance.rate = 1.0;
                         utterance.pitch = 1.0;
                         
-                        var voices = synth.getVoices() || [];
-                        var target = "{web_code}".toLowerCase();
-                        var prefix = target.split("-")[0];
-                        var matched = voices.find(function(v) {{
-                            return v.lang && v.lang.toLowerCase() === target;
-                        }}) || voices.find(function(v) {{
-                            return v.lang && v.lang.toLowerCase().startsWith(prefix);
-                        }});
-                        if (matched) utterance.voice = matched;
-                        synth.speak(utterance);
+                        function assignVoiceAndSpeak() {{
+                            var voices = synth.getVoices() || [];
+                            var target = "{web_code}".toLowerCase();
+                            var prefix = target.split("-")[0];
+                            var matched = voices.find(function(v) {{
+                                return v.lang && v.lang.toLowerCase() === target;
+                            }}) || voices.find(function(v) {{
+                                return v.lang && v.lang.toLowerCase().startsWith(prefix);
+                            }});
+                            if (matched) utterance.voice = matched;
+                            synth.speak(utterance);
+                        }}
+
+                        if (synth.getVoices().length > 0) {{
+                            assignVoiceAndSpeak();
+                        }} else {{
+                            synth.onvoiceschanged = function() {{
+                                assignVoiceAndSpeak();
+                            }};
+                            setTimeout(assignVoiceAndSpeak, 100);
+                        }}
                     }}
                 }} catch(e) {{}}
             }})();
         </script>
         """
         components.html(html_code, height=0, width=0)
+
 
 def stop_speech():
     """Immediately halts any playing audio stream and synthesizers."""

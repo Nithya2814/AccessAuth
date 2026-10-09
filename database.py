@@ -107,6 +107,39 @@ def get_user_by_email(email: str):
     conn.close()
     return user
 
+def get_user_by_phone(phone: str):
+    """Retrieves user record by phone number (clean numeric match)."""
+    if not phone:
+        return None
+    conn = get_connection()
+    cursor = conn.cursor()
+    digits = "".join(ch for ch in str(phone) if ch.isdigit())
+    target = digits[-10:] if len(digits) >= 10 else digits
+    cursor.execute("SELECT * FROM users WHERE phone LIKE '%' || ? || '%'", (target,))
+    user = cursor.fetchone()
+    conn.close()
+    return user
+
+def register_phone_user(fullname: str, phone: str, face_data: str) -> tuple:
+    """Quick enrollment using phone number as primary identifier for Blind/Elderly access."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    clean_phone = "".join(ch for ch in str(phone) if ch.isdigit())
+    auto_email = f"user_{clean_phone[-10:] if len(clean_phone) >= 10 else clean_phone}@accessauth.local"
+    pwd_hash, salt = hash_password(clean_phone[-6:] if len(clean_phone) >= 6 else "123456")
+    try:
+        cursor.execute("""
+            INSERT INTO users (fullname, email, phone, password_hash, salt, face_data, failed_attempts)
+            VALUES (?, ?, ?, ?, ?, ?, 0)
+        """, (fullname.strip() or f"User {clean_phone[-4:]}", auto_email, clean_phone, pwd_hash, salt, face_data))
+        conn.commit()
+        return True, "Success"
+    except Exception as e:
+        return False, str(e)
+    finally:
+        conn.close()
+
+
 def increment_failed_attempts(email: str) -> int:
     conn = get_connection()
     cursor = conn.cursor()
