@@ -12,7 +12,53 @@ import face_engine
 importlib.reload(face_engine)
 from face_engine import extract_face_features, compare_faces, check_lighting, analyze_face_spatial_guidance, get_spatial_voice_text
 from risk_friction import RiskEngine, FrictionEngine
-from voice_helper import play_speech, stop_speech, play_audio_pulses
+import voice_helper
+try:
+    importlib.reload(voice_helper)
+except Exception:
+    pass
+
+play_speech = getattr(voice_helper, "play_speech", None)
+stop_speech = getattr(voice_helper, "stop_speech", None)
+play_audio_pulses = getattr(voice_helper, "play_audio_pulses", None)
+
+if play_audio_pulses is None:
+    def play_audio_pulses(pulse_count: int = 4):
+        html_code = f"""
+        <script>
+            (function() {{
+                try {{
+                    var AudioContext = window.AudioContext || window.webkitAudioContext;
+                    if (AudioContext) {{
+                        var ctx = new AudioContext();
+                        var count = {pulse_count};
+                        for (var i = 0; i < count; i++) {{
+                            var osc = ctx.createOscillator();
+                            var gain = ctx.createGain();
+                            osc.type = "sine";
+                            osc.frequency.setValueAtTime(600, ctx.currentTime);
+                            gain.gain.setValueAtTime(0.3, ctx.currentTime);
+                            osc.connect(gain);
+                            gain.connect(ctx.destination);
+                            var start = ctx.currentTime + (i * 0.45);
+                            osc.start(start);
+                            osc.stop(start + 0.22);
+                        }}
+                    }}
+                    if (navigator.vibrate) {{
+                        var vib = [];
+                        for (var j = 0; j < {pulse_count}; j++) {{
+                            vib.push(220);
+                            if (j < {pulse_count} - 1) vib.push(230);
+                        }}
+                        navigator.vibrate(vib);
+                    }}
+                }} catch(e) {{}}
+            }})();
+        </script>
+        """
+        components.html(html_code, height=0, width=0)
+
 
 # Page configuration
 st.set_page_config(
