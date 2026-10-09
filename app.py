@@ -674,7 +674,7 @@ st.markdown(f"""
 
     /* Camera Circular Viewfinder Frame */
     div[data-testid="stCameraInput"] video,
-    div[data-testid="stCameraInput"] img {
+    div[data-testid="stCameraInput"] img {{
         border: 5px dashed #10b981 !important;
         border-radius: 50% !important;
         max-width: 320px !important;
@@ -683,7 +683,7 @@ st.markdown(f"""
         margin: 12px auto !important;
         display: block !important;
         box-shadow: 0 0 0 8px rgba(16, 185, 129, 0.22), 0 0 30px rgba(16, 185, 129, 0.45) !important;
-    }
+    }}
 </style>
 """, unsafe_allow_html=True)
 
