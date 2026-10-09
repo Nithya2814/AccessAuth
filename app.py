@@ -55,9 +55,12 @@ play_audio_pulses = getattr(voice_helper, "play_audio_pulses", None)
 
 def play_speech(text: str, language_name: str = "English", force: bool = False):
     """Speaks ONLY when Blind Assist Mode is active, or if force=True."""
+    if not text or not str(text).strip() or "_" in str(text):
+        return
     if st.session_state.get("access_mode") == "Blind Assist Mode" or force:
         if raw_play_speech:
             raw_play_speech(text, language_name)
+
 
 if play_audio_pulses is None:
     def play_audio_pulses(pulse_count: int = 4):
@@ -120,7 +123,8 @@ class SafeDict(dict):
         eng = TRANSLATIONS.get("English", {})
         if key in eng:
             return eng[key]
-        return str(key)
+        return ""
+
 
 # ----------------- SESSION STATE & CONFIG -----------------
 AVAILABLE_LANGUAGES = [
@@ -1419,7 +1423,11 @@ with tab_login:
         if st.session_state.access_mode == "Dyslexia Mode":
             st.caption("🔤 Dyslexia Mode: Wide letter spacing and high readability typography enabled.")
 
-        use_symbol_captcha = (st.session_state.access_mode == "Dyslexia Mode" or st.session_state.login_attempts >= 2)
+        if "captcha_fails" not in st.session_state:
+            st.session_state.captcha_fails = 0
+
+        # Show Symbol CAPTCHA only after 3 failed captcha attempts!
+        use_symbol_captcha = (st.session_state.get("captcha_fails", 0) >= 3)
         
         SYMBOLS_POOL = [
             {"name": "Star", "icon": "⭐", "key": "symbol_star"},
@@ -1478,6 +1486,11 @@ with tab_login:
                 else:
                     captcha_valid = (captcha_input.strip().upper() == str(st.session_state.captcha_a).strip().upper())
                 
+                if not captcha_valid:
+                    st.session_state.captcha_fails = st.session_state.get("captcha_fails", 0) + 1
+                else:
+                    st.session_state.captcha_fails = 0
+
                 # 2. Check credentials
                 user = db.get_user_by_email(login_email)
                 credentials_valid = False
@@ -1490,6 +1503,7 @@ with tab_login:
                     db.log_security_event("AUTH_SUCCESS_PASSWORD", user_email=login_email, ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=zt_eval["score"], details="Password and CAPTCHA authenticated")
                     st.success(f"✅ {t['face_verified_msg']} {user['fullname']}!")
                     st.session_state.login_attempts = 0
+                    st.session_state.captcha_fails = 0
                     db.reset_failed_attempts(login_email)
                     st.session_state.logged_in_user = dict(user)
                     st.rerun()
@@ -1511,6 +1525,7 @@ with tab_login:
                         st.error(t["err_invalid_login"])
                     st.warning(t["attempts_warning"].format(st.session_state.login_attempts))
                     st.rerun()
+
 
 
         # DIVIDER: OR

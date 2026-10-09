@@ -132,7 +132,9 @@ TRANSLATIONS = {
         "blind_user_found": "User found: {}. Please position your face inside the circle.",
         "blind_user_not_found": "New phone number. Quick biometric enrollment will be created for you.",
         "blind_enter_phone_first": "Please enter your phone number to proceed.",
+        "blind_welcome_speech": "Welcome to Blind Assist Mode. Please choose your language, enter your phone number, and position your face in the circular guide.",
     },
+
 
     "Tamil": {
         "title": "பாதுகாப்பான மற்றும் எளிய டிஜிட்டல் உள்நுழைவு",
@@ -266,7 +268,9 @@ TRANSLATIONS = {
         "blind_user_found": "பயனர் கண்டறியப்பட்டார்: {}. இப்போது உங்கள் முகத்தை வட்டத்திற்குள் வைக்கவும்.",
         "blind_user_not_found": "புதிய தொலைபேசி எண். உங்களுக்காக புதிய முக கணக்கு உருவாக்கப்படும்.",
         "blind_enter_phone_first": "தொடர உங்கள் தொலைபேசி எண்ணை உள்ளிடவும்.",
+        "blind_welcome_speech": "பார்வை உதவி முறைக்கு நல்வரவு. உங்கள் மொழியைத் தேர்ந்தெடுத்து, தொலைபேசி எண்ணை உள்ளிட்டு, முகத்தை வட்ட வழிகாட்டிக்குள் வைக்கவும்.",
     },
+
 
     "Hindi": {
         "title": "सुरक्षित और सुलभ डिजिटल प्रमाणीकरण",
