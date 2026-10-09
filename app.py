@@ -383,17 +383,68 @@ st.markdown(f"""
         color: {text_color} !important;
     }}
 
-    /* Text & Password Inputs */
-    input[type="text"], input[type="password"], div[data-baseweb="input"] input {{
+    /* Form Inputs & Containers Reset (Ensures high contrast in Light & Dyslexia modes) */
+    div[data-testid="stTextInput"],
+    div[data-testid="stTextInput"] > div,
+    div[data-baseweb="input"],
+    div[data-baseweb="base-input"],
+    div[data-baseweb="input"] > div {{
         background-color: {input_bg} !important;
+        background: {input_bg} !important;
+        border-color: {border_color} !important;
+        border-radius: 8px !important;
+    }}
+
+    div[data-baseweb="input"] {{
+        border: 1.5px solid {border_color} !important;
+        background-color: {input_bg} !important;
+        background: {input_bg} !important;
+        border-radius: 8px !important;
+    }}
+
+    div[data-baseweb="input"]:focus-within {{
+        border-color: #2563eb !important;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25) !important;
+    }}
+
+    div[data-baseweb="input"] input,
+    input[type="text"], 
+    input[type="password"], 
+    input[type="email"],
+    input[type="number"],
+    input {{
+        background-color: {input_bg} !important;
+        background: {input_bg} !important;
         color: {input_text} !important;
         -webkit-text-fill-color: {input_text} !important;
-        border: 1.5px solid {border_color} !important;
-        border-radius: 8px !important;
+        border: none !important;
         font-size: calc(15px * {f_scale}) !important;
         padding: 10px 14px !important;
         letter-spacing: normal !important;
         word-spacing: normal !important;
+    }}
+
+    /* Password Reveal Toggle Button & Embedded Icons inside inputs */
+    div[data-baseweb="input"] button,
+    div[data-baseweb="input"] [role="button"],
+    div[data-baseweb="input"] svg,
+    div[data-baseweb="input"] svg path {{
+        background-color: transparent !important;
+        background: transparent !important;
+        color: {input_text} !important;
+        fill: {input_text} !important;
+    }}
+
+    /* Chrome / Edge / Safari Autofill Override (Eradicates Dark Navy Autofill Glitch) */
+    input:-webkit-autofill,
+    input:-webkit-autofill:hover, 
+    input:-webkit-autofill:focus, 
+    input:-webkit-autofill:active {{
+        -webkit-box-shadow: 0 0 0 1000px {input_bg} inset !important;
+        box-shadow: 0 0 0 1000px {input_bg} inset !important;
+        -webkit-text-fill-color: {input_text} !important;
+        color: {input_text} !important;
+        transition: background-color 5000s ease-in-out 0s !important;
     }}
 
     /* High Visibility Placeholder in Light and Dark Modes */
@@ -409,10 +460,12 @@ st.markdown(f"""
     }}
     input::-moz-placeholder {{
         color: {placeholder_color} !important;
+        -webkit-text-fill-color: {placeholder_color} !important;
         opacity: 0.9 !important;
     }}
     input:-ms-input-placeholder {{
         color: {placeholder_color} !important;
+        -webkit-text-fill-color: {placeholder_color} !important;
         opacity: 0.9 !important;
     }}
 
@@ -780,6 +833,16 @@ with st.sidebar:
     )
     if selected_font != st.session_state.font_scale:
         st.session_state.font_scale = selected_font
+        st.rerun()
+
+    st.markdown("---")
+    # 5. DEMO & SECURITY QUICK RESET
+    st.subheader("🛡️ Demo & Evaluation")
+    if st.button("🔄 Reset Rate Limit & Attempts", use_container_width=True, key="sidebar_reset_throttle_btn"):
+        db.reset_ip_throttle("127.0.0.1")
+        st.session_state.login_attempts = 0
+        st.session_state.captcha_fails = 0
+        st.sidebar.success("✅ Reset successful!")
         st.rerun()
 
 
@@ -1444,6 +1507,18 @@ with tab_login:
             random.shuffle(opts)
             st.session_state.symbol_captcha_options = opts
 
+        if db.check_ip_throttle("127.0.0.1", max_failed=25, window_minutes=15):
+            st.error("⚠️ Security Rate Limit Active: Rapid failed login attempts detected.")
+            col_unl1, col_unl2 = st.columns([2.5, 1.5])
+            with col_unl1:
+                st.info("💡 Jury / Demo Evaluation: Click Unlock to instantly clear rate throttle.")
+            with col_unl2:
+                if st.button("🔓 Unlock IP Now", key="btn_unlock_banner", type="primary", use_container_width=True):
+                    db.reset_ip_throttle("127.0.0.1")
+                    st.session_state.login_attempts = 0
+                    st.session_state.captcha_fails = 0
+                    st.rerun()
+
         with st.form("login_form"):
             login_email = st.text_input(t["email"], placeholder="name@example.com")
             login_password = st.text_input(t["password"], type="password", placeholder="••••••••")
@@ -1475,8 +1550,8 @@ with tab_login:
             
             if submit_login:
                 # 0. Check dynamic IP Rate Throttling
-                if db.check_ip_throttle("127.0.0.1", max_failed=5, window_minutes=15):
-                    st.error("⚠️ Security Rate Limit Active: Too many failed login attempts from this network. Please wait a few moments.")
+                if db.check_ip_throttle("127.0.0.1", max_failed=25, window_minutes=15):
+                    st.error("⚠️ Security Rate Limit Active: Too many failed login attempts from this network. Click 'Unlock IP Now' above or use the Reset button in sidebar.")
                     db.log_security_event("IP_RATE_THROTTLED", user_email=login_email, ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=95, details="Dynamic rate limit triggered")
                     st.stop()
 
