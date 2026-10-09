@@ -1,6 +1,8 @@
 # app.py - Secure & Accessible Digital Authentication System
 import streamlit as st
+import streamlit.components.v1 as components
 import importlib
+import random
 import database as db
 importlib.reload(db)
 import translations
@@ -10,7 +12,7 @@ import face_engine
 importlib.reload(face_engine)
 from face_engine import extract_face_features, compare_faces, check_lighting, analyze_face_spatial_guidance, get_spatial_voice_text
 from risk_friction import RiskEngine, FrictionEngine
-from voice_helper import play_speech, stop_speech
+from voice_helper import play_speech, stop_speech, play_audio_pulses
 
 # Page configuration
 st.set_page_config(
@@ -39,6 +41,44 @@ class SafeDict(dict):
             "sidebar_theme_light": "Light",
             "sidebar_font_label": "Text Size",
             "sidebar_font_help": "Adjust font size for easy reading",
+            "blind_mode_title": "Blind Assist Mode Active",
+            "blind_mode_subtitle": "Voice Guidance • Eyes-Free Face Login • High Contrast",
+            "blind_welcome_speech": {
+                "English": "Blind Assist Mode active. Voice guidance enabled. Press Tab to hear options, or use One-Tap Face Biometric Login without typing.",
+                "Tamil": "பார்வை மாற்றுத்திறனாளி முறை செயல்படுத்தப்பட்டுள்ளது. ஆடியோ வழிகாட்டுதல் தயார். தட்டச்சு செய்யாமல் முக பயோமெட்ரிக் உள்நுழைவு அல்லது ஆடியோ பாதுகாப்பு சோதனையைப் பயன்படுத்தலாம்.",
+                "Hindi": "ब्लाइंड असिस्ट मोड सक्रिय है। ऑडियो मार्गदर्शन तैयार है। आप बिना टाइप किए वन-टैप फेस बायोमेट्रिक लॉगिन का उपयोग कर सकते हैं।",
+                "Telugu": "బ్లైండ్ అసిస్ట్ మోడ్ యాక్టివ్ చేయబడింది. ఆడియో మార్గదర్శకత్వం సిద్ధంగా ఉంది. టైప్ చేయకుండా వన్-ట్యాప్ ఫేస్ బయోమెట్రిక్ లాగిన్ ఉపయోగించవచ్చు.",
+                "Kannada": "ಅಂಧರ ಸಹಾಯ ಮೋಡ್ ಸಕ್ರಿಯಗೊಂಡಿದೆ. ಧ್ವನಿ ಮಾರ್ಗದರ್ಶನ ಸಿದ್ಧವಾಗಿದೆ. ಟೈಪ್ ಮಾಡದೆಯೇ ಒನ್-ಟ್ಯಾಪ್ ಫೇಸ್ ಲಾಗಿನ್ ಬಳಸಬಹುದು.",
+                "Malayalam": "ബ്ലൈൻഡ് അസിസ്റ്റ് മോഡ് സജീവമാക്കി. വോയ്‌സ് മാർഗ്ഗനിർദ്ദേശം തയ്യാറാണ്. ടൈപ്പ് ചെയ്യാതെ ഫേസ് ലോഗിൻ ഉപയോഗിക്കാം.",
+                "Bengali": "ব্লাইন্ড অ্যাসিস্ট মোড সক্রিয় করা হয়েছে। ভয়েস নির্দেশিকা প্রস্তুত। টাইপ না করে ফেস লগইন ব্যবহার করতে পারেন।",
+                "Marathi": "ब्लाइंड असिस्ट मोड सक्रिय आहे. ऑडिओ मार्गदर्शन तयार आहे. टाईप न करता वन-टॅप फेस लॉगिन वापरू शकता.",
+                "Spanish": "Modo de Asistencia para Ciegos activado. Guía de voz habilitada. Puede iniciar sesión con reconocimiento facial con un toque sin escribir.",
+                "French": "Mode d'assistance visuelle activé. Guidage vocal prêt. Vous pouvez utiliser la connexion faciale en un clic sans taper."
+            }.get(st.session_state.get("lang", "English"), "Blind Assist Mode active. Voice guidance enabled. Press Tab to hear options."),
+            "audio_challenge_prompt": {
+                "English": "Security Audio Challenge. Please listen to the audio pulses. How many pulses did you hear?",
+                "Tamil": "பாதுகாப்பு ஆடியோ சோதனை. ஒலி துடிப்புகளை கவனமாகக் கேளுங்கள். எத்தனை துடிப்புகள் கேட்டன?",
+                "Hindi": "सुरक्षा ऑडियो चुनौती। कृपया ऑडियो पल्स सुनें। आपने कितनी पल्स सुनीं?",
+                "Telugu": "భద్రతా ఆడియో ఛాలెంజ్. దయచేసి ఆడియో పల్స్‌లను వినండి. మీరు ఎన్ని పల్స్‌లను విన్నారు?",
+                "Kannada": "ಸುರಕ್ಷತಾ ಆಡಿಯೋ ಸವಾಲು. ದಯವಿಟ್ಟು ಆಡಿಯೋ ನಾಡಿಮಿಡಿತಗಳನ್ನು ಆಲಿಸಿ. ನೀವು ಎಷ್ಟು ಸದ್ದುಗಳನ್ನು ಕೇಳಿದ್ದೀರಿ?",
+                "Malayalam": "സുരക്ഷാ ഓഡിയോ വെല്ലുവിളി. ഓഡിയോ പൾസുകൾ ശ്രദ്ധിക്കുക. എത്ര പൾസുകൾ കേട്ടു?",
+                "Bengali": "নিরাপত্তা অডিও চ্যালেঞ্জ। অডিও ডাল শুনুন। আপনি কয়টি ডাল শুনেছেন?",
+                "Marathi": "सुरक्षा ऑडिओ आव्हान. कृपया ऑडिओ स्पंदने ऐका. तुम्ही किती स्पंदने ऐकली?",
+                "Spanish": "Desafío de seguridad de audio. Escuche los pulsos de audio. ¿Cuántos pulsos escuchó?",
+                "French": "Défi de sécurité audio. Écoutez les impulsions audio. Combien d'impulsions avez-vous entendues?"
+            }.get(st.session_state.get("lang", "English"), "Security Audio Challenge. Please listen to the audio pulses. How many pulses did you hear?"),
+            "audio_challenge_pass": {
+                "English": "Audio security challenge verified successfully! Human verified.",
+                "Tamil": "ஆடியோ பாதுகாப்பு சோதனை வெற்றிகரமாக சரிபார்க்கப்பட்டது! மனித பயனர் உறுதிசெய்யப்பட்டார்.",
+                "Hindi": "ऑडियो सुरक्षा चुनौती सत्यापित! मानव उपयोगकर्ता की पुष्टि हुई।",
+                "Telugu": "ఆడియో సెక్యూరిటీ ఛాలెంజ్ ధృవీకరించబడింది! మానవుడు ధృవీకరించబడ్డాడు.",
+                "Kannada": "ಆಡಿಯೋ ಭದ್ರತಾ ಸವಾಲು ಯಶಸ್ವಿಯಾಗಿ ಪರಿಶೀಲಿಸಲ್ಪಟ್ಟಿದೆ!",
+                "Malayalam": "ഓഡിയോ സുരക്ഷാ വെല്ലുവിളി വിജയകരമായി സ്ഥിರീകരിച്ചു!",
+                "Bengali": "অডিও নিরাপত্তা চ্যালেঞ্জ সফলভাবে যাচাই করা হয়েছে!",
+                "Marathi": "ऑडिओ सुरक्षा आव्हान यशस्वीरित्या सत्यापित झाले!",
+                "Spanish": "Desafío de seguridad de audio verificado con éxito.",
+                "French": "Défi de sécurité audio vérifié avec succès."
+            }.get(st.session_state.get("lang", "English"), "Audio security challenge verified successfully! Human verified."),
             "login_google": {
                 "English": "Sign in with Google",
                 "Tamil": "Google மூலம் உள்நுழைக",
@@ -102,6 +142,12 @@ if "generated_otp" not in st.session_state:
     st.session_state.generated_otp = None
 if "target_email_locked" not in st.session_state:
     st.session_state.target_email_locked = None
+if "audio_pulse_count" not in st.session_state:
+    st.session_state.audio_pulse_count = random.choice([3, 4, 5])
+if "blind_challenge_solved" not in st.session_state:
+    st.session_state.blind_challenge_solved = False
+if "should_announce_blind" not in st.session_state:
+    st.session_state.should_announce_blind = False
 
 # Current translation dictionary
 t = SafeDict(TRANSLATIONS.get(st.session_state.lang, TRANSLATIONS.get("English", {})))
@@ -567,6 +613,37 @@ st.markdown(f"""
         color: #ef4444;
         border: 1px solid rgba(239, 68, 68, 0.3);
     }}
+
+    /* High-Visibility Keyboard Focus Rings for Tab Navigation */
+    *:focus-visible, 
+    button:focus-visible, 
+    input:focus-visible, 
+    [data-baseweb="radio"]:focus-within,
+    [tabindex="0"]:focus-visible,
+    div[data-testid="stSelectbox"]:focus-within {{
+        outline: 4px solid {'#f59e0b' if is_blind else '#2563eb'} !important;
+        outline-offset: 3px !important;
+        box-shadow: 0 0 0 5px {'rgba(245, 158, 11, 0.5)' if is_blind else 'rgba(37, 99, 235, 0.4)'} !important;
+    }}
+
+    /* Top Accessibility Control Card */
+    .access-nav-card {{
+        background-color: {card_bg} !important;
+        border: 2px solid {'#f59e0b' if is_blind else border_color} !important;
+        border-radius: 14px !important;
+        padding: 1rem 1.25rem !important;
+        margin-bottom: 1.25rem !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.06) !important;
+    }}
+
+    /* High Contrast Accessible Action Cards */
+    .blind-action-card {{
+        background-color: {card_bg} !important;
+        border: 2.5px solid {'#f59e0b' if not is_light else '#000000'} !important;
+        border-radius: 14px !important;
+        padding: 1.25rem 1.5rem !important;
+        margin-bottom: 1.25rem !important;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -591,10 +668,13 @@ with st.sidebar:
         "Accessibility Mode",
         options=ACCESSIBILITY_MODES,
         index=ACCESSIBILITY_MODES.index(st.session_state.access_mode) if st.session_state.access_mode in ACCESSIBILITY_MODES else 0,
+        key="sidebar_access_mode_radio",
         label_visibility="collapsed"
     )
     if selected_access != st.session_state.access_mode:
         st.session_state.access_mode = selected_access
+        if selected_access == "Blind Assist Mode":
+            st.session_state.should_announce_blind = True
         st.rerun()
 
     st.markdown("---")
@@ -630,6 +710,114 @@ with st.sidebar:
 
 
 t = SafeDict(TRANSLATIONS.get(st.session_state.lang, TRANSLATIONS.get("English", {})))
+
+# ----------------- CLIENT-SIDE KEYBOARD SHORTCUTS (ALT+B, ALT+D, ALT+S, ALT+V) -----------------
+components.html("""
+<script>
+(function() {
+    function setupShortcuts() {
+        var doc = (window.parent && window.parent.document) || document;
+        if (!doc || doc.__accessShortcutsInstalled) return;
+        doc.__accessShortcutsInstalled = true;
+        
+        doc.addEventListener('keydown', function(e) {
+            // Alt + B for Blind Assist Mode
+            if (e.altKey && (e.key === 'b' || e.key === 'B')) {
+                e.preventDefault();
+                var radios = doc.querySelectorAll('[data-baseweb="radio"]');
+                for (var i = 0; i < radios.length; i++) {
+                    if (radios[i].innerText && radios[i].innerText.includes('Blind Assist Mode')) {
+                        radios[i].click();
+                        break;
+                    }
+                }
+            }
+            // Alt + D for Dyslexia Mode
+            else if (e.altKey && (e.key === 'd' || e.key === 'D')) {
+                e.preventDefault();
+                var radios = doc.querySelectorAll('[data-baseweb="radio"]');
+                for (var i = 0; i < radios.length; i++) {
+                    if (radios[i].innerText && radios[i].innerText.includes('Dyslexia Mode')) {
+                        radios[i].click();
+                        break;
+                    }
+                }
+            }
+            // Alt + S for Standard Mode
+            else if (e.altKey && (e.key === 's' || e.key === 'S')) {
+                e.preventDefault();
+                var radios = doc.querySelectorAll('[data-baseweb="radio"]');
+                for (var i = 0; i < radios.length; i++) {
+                    if (radios[i].innerText && radios[i].innerText.includes('Standard Mode')) {
+                        radios[i].click();
+                        break;
+                    }
+                }
+            }
+            // Alt + V for Voice Assistant Speak
+            else if (e.altKey && (e.key === 'v' || e.key === 'V')) {
+                e.preventDefault();
+                var btns = doc.querySelectorAll('button');
+                for (var j = 0; j < btns.length; j++) {
+                    if (btns[j].innerText && (btns[j].innerText.includes('Read') || btns[j].innerText.includes('Voice Assistant'))) {
+                        btns[j].click();
+                        break;
+                    }
+                }
+            }
+        });
+    }
+    setupShortcuts();
+    setInterval(setupShortcuts, 1500);
+})();
+</script>
+""", height=0, width=0)
+
+# ===============================================================
+# 🌟 TOP-LEVEL ACCESSIBILITY & VOICE BAR (FIRST TAB STOP ON LAPTOP)
+# ===============================================================
+with st.container():
+    st.markdown('<div class="access-nav-card">', unsafe_allow_html=True)
+    top_col1, top_col2 = st.columns([3, 2])
+    with top_col1:
+        st.markdown("**🛡️ Accessibility Mode Selection**")
+        top_access = st.radio(
+            "Accessibility Mode Selection",
+            options=ACCESSIBILITY_MODES,
+            index=ACCESSIBILITY_MODES.index(st.session_state.access_mode) if st.session_state.access_mode in ACCESSIBILITY_MODES else 0,
+            horizontal=True,
+            key="top_access_mode_radio",
+            label_visibility="collapsed"
+        )
+        if top_access != st.session_state.access_mode:
+            st.session_state.access_mode = top_access
+            if top_access == "Blind Assist Mode":
+                st.session_state.should_announce_blind = True
+            st.rerun()
+
+    with top_col2:
+        st.markdown("**🎙️ Universal Voice Assistant**")
+        v_col1, v_col2 = st.columns(2)
+        with v_col1:
+            if st.button("🔊 Read Screen", key="top_speak_btn", type="primary", use_container_width=True):
+                if st.session_state.access_mode == "Blind Assist Mode":
+                    play_speech(t["blind_welcome_speech"], st.session_state.lang)
+                elif st.session_state.access_mode == "Dyslexia Mode":
+                    play_speech("Dyslexia mode active. Lexend typography and mirror cue highlighting are enabled. You can use standard login or one tap face biometric login.", st.session_state.lang)
+                else:
+                    play_speech(t["speech_text"], st.session_state.lang)
+        with v_col2:
+            if st.button(t["stop_btn"], key="top_stop_btn", type="secondary", use_container_width=True):
+                stop_speech()
+                
+    st.caption("⌨️ Laptop Shortcuts: Press Alt + B for Blind Mode • Alt + D for Dyslexia Mode • Alt + S for Standard Mode • Press Tab to navigate")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# Blind Mode Audio Auto-Announcement
+if st.session_state.access_mode == "Blind Assist Mode":
+    if st.session_state.get("should_announce_blind", False):
+        st.session_state.should_announce_blind = False
+        play_speech(t["blind_welcome_speech"], st.session_state.lang)
 
 # ----------------- MAIN TITLE HEADER -----------------
 st.markdown(f"""
@@ -707,6 +895,153 @@ if st.session_state.logged_in_user:
         st.session_state.generated_otp = None
         st.session_state.show_google_dialog = False
         st.rerun()
+    st.stop()
+
+# ===============================================================
+# 👁️ BLIND ASSIST MODE: EYES-FREE VOICE & BIOMETRIC CONSOLE
+# ===============================================================
+if st.session_state.access_mode == "Blind Assist Mode":
+    st.markdown(f"""
+    <div style="background-color: {card_bg}; border: 3px solid {'#f59e0b' if is_light else '#fbbf24'}; border-radius: 14px; padding: 18px 22px; margin: 8px 0 22px 0;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+            <div>
+                <h3 style="margin: 0; color: {'#000000' if is_light else '#ffffff'};">👁️ Blind Assist Voice Console</h3>
+                <p style="margin: 4px 0 0 0; color: {sub_color}; font-size: 1.02rem;">Voice Guided • Eyes-Free Face Login • Acoustic Security Challenge</p>
+            </div>
+            <div style="margin-top: 6px;">
+                <span class="status-pill pill-green" style="font-size: 0.95rem;">🔊 Audio Guidance Active</span>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # 1. ONE-TAP FACE BIOMETRIC LOGIN (PRIMARY EYES-FREE METHOD)
+    st.markdown('<div class="blind-action-card">', unsafe_allow_html=True)
+    st.markdown("### 📸 Eyes-Free One-Tap Face Biometric Login")
+    st.write("Position your face in front of the camera and take a photo. Our spatial voice engine will guide you automatically.")
+    
+    col_b_cam1, col_b_cam2 = st.columns([3, 1])
+    with col_b_cam1:
+        blind_face_cam = st.camera_input("Scan Face for Eyes-Free Login", key="blind_main_face_cam")
+    with col_b_cam2:
+        if st.button("🔊 Voice Instructions", key="blind_voice_cam_btn", type="secondary", use_container_width=True):
+            play_speech("Position your face directly towards your camera and take a photo. If needed, the system will tell you to turn on lights or move your face.", st.session_state.lang)
+
+    if blind_face_cam:
+        spatial_b = analyze_face_spatial_guidance(blind_face_cam)
+        if not spatial_b["is_ready"]:
+            v_msg_b = get_spatial_voice_text(spatial_b["status"], st.session_state.lang)
+            st.warning(f"⚠️ {v_msg_b}")
+            play_speech(v_msg_b, st.session_state.lang)
+        else:
+            centered_txt = get_spatial_voice_text("CENTERED", st.session_state.lang)
+            st.info(f"✅ {centered_txt}")
+            
+            # Automatically check against all enrolled faces in database
+            all_users = db.get_all_users_with_face()
+            best_match = None
+            best_score = 0.0
+            for u in all_users:
+                matched, msg, score = compare_faces(u["face_data"], blind_face_cam, threshold=0.45)
+                if matched and score > best_score:
+                    best_match = u
+                    best_score = score
+            
+            if best_match:
+                st.success(f"✅ Face verified! Welcome back, {best_match['fullname']}!")
+                play_speech(f"Face verified. Welcome back {best_match['fullname']}", st.session_state.lang)
+                st.session_state.login_attempts = 0
+                db.reset_failed_attempts(best_match["email"])
+                st.session_state.logged_in_user = dict(best_match)
+                st.rerun()
+            else:
+                st.error("❌ Face does not match registered biometrics. Please adjust lighting or try again.")
+                play_speech("Face does not match registered biometrics. Please adjust lighting and try again.", st.session_state.lang)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # 2. ACOUSTIC SECURITY VIBRATION CHALLENGE (CAPTCHA FOR BLIND USERS)
+    st.markdown('<div class="blind-action-card">', unsafe_allow_html=True)
+    st.markdown("### 📳 Audio Security Vibration Challenge")
+    st.write("Acoustic CAPTCHA designed for visually impaired users. Listen to the audio pulse beeps and select the count.")
+    
+    col_p1, col_p2 = st.columns([1.5, 1])
+    with col_p1:
+        if st.button("🔊 Play Audio Pulses", key="blind_play_pulses_btn", type="primary", use_container_width=True):
+            play_audio_pulses(st.session_state.audio_pulse_count)
+            play_speech(t["audio_challenge_prompt"], st.session_state.lang)
+    with col_p2:
+        if st.button("🔄 New Challenge", key="blind_new_pulses_btn", type="secondary", use_container_width=True):
+            st.session_state.audio_pulse_count = random.choice([2, 3, 4, 5])
+            st.session_state.blind_challenge_solved = False
+            st.rerun()
+
+    st.markdown("**How many audio pulses did you hear?**")
+    p_c1, p_c2, p_c3, p_c4 = st.columns(4)
+    for col, count_val in zip([p_c1, p_c2, p_c3, p_c4], [2, 3, 4, 5]):
+        with col:
+            if st.button(f"{count_val} Pulses", key=f"pulse_sel_{count_val}", use_container_width=True):
+                if count_val == st.session_state.audio_pulse_count:
+                    st.session_state.blind_challenge_solved = True
+                    play_speech(t["audio_challenge_pass"], st.session_state.lang)
+                    st.success(t["audio_challenge_pass"])
+                else:
+                    play_speech("Incorrect pulse count. Please listen again.", st.session_state.lang)
+                    st.error("Incorrect count. Please click Play Audio Pulses to listen again.")
+
+    if st.session_state.blind_challenge_solved:
+        st.success("✅ Acoustic Security Challenge Verified! Human User Confirmed.")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # 3. REGISTER NEW USER (SIGN UP)
+    with st.expander("📝 Register New Account & Enroll Face", expanded=False):
+        st.write("Register a new user account with eyes-free face enrollment:")
+        b_su_name = st.text_input(f"{t['fullname']} *", placeholder="Your Name", key="b_su_name")
+        b_su_email = st.text_input(f"{t['email']} *", placeholder="name@example.com", key="b_su_email")
+        b_su_phone = st.text_input(f"{t['phone']} *", placeholder="+91 9876543210", key="b_su_phone")
+        b_su_pass = st.text_input(f"{t['password']} *", type="password", placeholder="••••••••", key="b_su_pass")
+        b_su_cam = st.camera_input("Capture Face for Enrollment", key="b_su_cam")
+        if b_su_cam:
+            sp_su = analyze_face_spatial_guidance(b_su_cam)
+            if not sp_su["is_ready"]:
+                st.warning(get_spatial_voice_text(sp_su["status"], st.session_state.lang))
+            else:
+                st.info(get_spatial_voice_text("CENTERED", st.session_state.lang))
+        if st.button("Register & Enroll Face", key="b_su_btn", type="primary", use_container_width=True):
+            if not b_su_name or not b_su_email or not b_su_pass or not b_su_cam:
+                st.error("Please fill all required fields and capture face.")
+            else:
+                ok, face_res = extract_face_features(b_su_cam)
+                if ok:
+                    reg_ok, reg_msg = db.register_user(b_su_name, b_su_email, b_su_phone, b_su_pass, face_res)
+                    if reg_ok:
+                        st.success(t["signup_success"])
+                        play_speech(f"Welcome {b_su_name}. Account registered successfully.", st.session_state.lang)
+                    else:
+                        st.error(reg_msg)
+                else:
+                    st.error("Failed to extract face features. Please retake photo.")
+
+    # 4. MANUAL CREDENTIALS LOGIN (FOR ASSISTED ACCESS)
+    with st.expander("📝 Manual Text Login (Assisted)", expanded=False):
+        st.write("If someone is assisting you with manual typing:")
+        with st.form("blind_assisted_login_form"):
+            b_email = st.text_input(t["email"], placeholder="name@example.com", key="b_login_email")
+            b_password = st.text_input(t["password"], type="password", placeholder="••••••••", key="b_login_pass")
+            b_submit = st.form_submit_button(t["login_btn"], type="primary", use_container_width=True)
+            if b_submit:
+                user = db.get_user_by_email(b_email)
+                if user and db.verify_password(b_password, user["salt"], user["password_hash"]):
+                    st.success("✅ Login successful!")
+                    st.session_state.login_attempts = 0
+                    db.reset_failed_attempts(b_email)
+                    st.session_state.logged_in_user = dict(user)
+                    st.rerun()
+                else:
+                    st.error(t["err_invalid_login"])
+
+    st.markdown("---")
+    st.caption("🔒 PS05: Secure & Accessible Digital Authentication • Multi-Factor Biometric & Adaptive Recovery")
     st.stop()
 
 # ----------------- MAIN TABS -----------------

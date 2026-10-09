@@ -1,4 +1,4 @@
-# voice_helper.py - Browser Web Speech API Integration for 10 Languages
+# voice_helper.py - Browser Web Speech API & Audio Pulse Generator
 import streamlit.components.v1 as components
 
 def play_speech(text: str, language_name: str = "English"):
@@ -19,21 +19,26 @@ def play_speech(text: str, language_name: str = "English"):
         "French": "fr-FR"
     }
     lang_code = lang_codes.get(language_name, "en-US")
-    # Clean text for JavaScript
-    clean_text = text.replace('"', '\\"').replace("'", "\\'").replace("\n", " ").strip()
+    # Clean text for JavaScript string literal
+    clean_text = text.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'").replace("\n", " ").strip()
     
     html_code = f"""
     <script>
-        if ('speechSynthesis' in window) {{
-            window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance("{clean_text}");
-            utterance.lang = "{lang_code}";
-            utterance.rate = 0.90;
-            utterance.pitch = 1.0;
-            window.speechSynthesis.speak(utterance);
-        }} else {{
-            console.warn("SpeechSynthesis not supported on this browser.");
-        }}
+        (function() {{
+            try {{
+                var synth = (window.parent && window.parent.speechSynthesis) || window.speechSynthesis;
+                if (synth) {{
+                    synth.cancel();
+                    var utterance = new SpeechSynthesisUtterance("{clean_text}");
+                    utterance.lang = "{lang_code}";
+                    utterance.rate = 0.92;
+                    utterance.pitch = 1.0;
+                    synth.speak(utterance);
+                }}
+            }} catch(e) {{
+                console.error("SpeechSynthesis error:", e);
+            }}
+        }})();
     </script>
     """
     components.html(html_code, height=0, width=0)
@@ -42,9 +47,57 @@ def stop_speech():
     """Immediately stops and cancels any active audio speech in the browser."""
     html_code = """
     <script>
-        if ('speechSynthesis' in window) {
-            window.speechSynthesis.cancel();
-        }
+        (function() {
+            try {
+                var synth = (window.parent && window.parent.speechSynthesis) || window.speechSynthesis;
+                if (synth) {
+                    synth.cancel();
+                }
+            } catch(e) {}
+        })();
     </script>
     """
     components.html(html_code, height=0, width=0)
+
+def play_audio_pulses(pulse_count: int = 4):
+    """
+    Plays rhythmic acoustic beeps via Web Audio API and triggers device vibration.
+    Used for eyes-free blind security challenge.
+    """
+    html_code = f"""
+    <script>
+        (function() {{
+            try {{
+                var AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (AudioContext) {{
+                    var ctx = new AudioContext();
+                    var count = {pulse_count};
+                    for (var i = 0; i < count; i++) {{
+                        var osc = ctx.createOscillator();
+                        var gain = ctx.createGain();
+                        osc.type = "sine";
+                        osc.frequency.setValueAtTime(600, ctx.currentTime);
+                        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        var start = ctx.currentTime + (i * 0.45);
+                        osc.start(start);
+                        osc.stop(start + 0.22);
+                    }}
+                }}
+                if (navigator.vibrate) {{
+                    var vib = [];
+                    for (var j = 0; j < {pulse_count}; j++) {{
+                        vib.push(220);
+                        if (j < {pulse_count} - 1) vib.push(230);
+                    }}
+                    navigator.vibrate(vib);
+                }}
+            }} catch(e) {{
+                console.error("Audio pulse error:", e);
+            }}
+        }})();
+    </script>
+    """
+    components.html(html_code, height=0, width=0)
+
