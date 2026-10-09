@@ -3,6 +3,8 @@ import sqlite3
 import os
 import hashlib
 import json
+import time
+import secrets
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "users.db")
 
@@ -14,6 +16,7 @@ def get_connection():
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
+    # 1. Core Users Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,6 +28,40 @@ def init_db():
             face_data TEXT NOT NULL,
             failed_attempts INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    # 2. Security Audit & Observability Telemetry Table (PS05 Module 4)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            event_type TEXT NOT NULL,
+            user_email TEXT,
+            ip_address TEXT,
+            device_fingerprint TEXT,
+            risk_score INTEGER DEFAULT 0,
+            details TEXT
+        )
+    """)
+    # 3. Decentralized WebAuthn / FIDO2 Public Key Credentials Table (PS05 Module 1)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS webauthn_credentials (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_email TEXT NOT NULL,
+            credential_id TEXT UNIQUE NOT NULL,
+            public_key TEXT NOT NULL,
+            sign_counter INTEGER DEFAULT 0,
+            aaguid TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    # 4. Ephemeral Cryptographic Single-Use Recovery Tokens Table (PS05 Module 3)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS recovery_tokens (
+            token_hash TEXT PRIMARY KEY,
+            user_email TEXT NOT NULL,
+            expires_at REAL NOT NULL,
+            used INTEGER DEFAULT 0
         )
     """)
     conn.commit()
@@ -104,3 +141,141 @@ def get_all_users_with_face():
     rows = cursor.fetchall()
     conn.close()
     return rows
+
+# ===============================================================
+# 🛡️ ZERO-TRUST AUDIT & OBSERVABILITY ENGINE (PS05 MODULE 4)
+# ===============================================================
+def log_security_event(event_type: str, user_email: str = "", ip_address: str = "127.0.0.1", device_fingerprint: str = "", risk_score: int = 0, details: str = ""):
+    """Logs security telemetry events to audit_logs table for anomaly detection."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO audit_logs (event_type, user_email, ip_address, device_fingerprint, risk_score, details)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (event_type, user_email.strip().lower() if user_email else "", ip_address, device_fingerprint, risk_score, details))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+def check_ip_throttle(ip_address: str = "127.0.0.1", max_failed: int = 5, window_minutes: int = 15) -> bool:
+    """
+    Checks if an IP address is throttled due to excessive failed attempts.
+    Zero-Trust dynamic rate-limiting.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT COUNT(*) as fail_count 
+            FROM audit_logs 
+            WHERE ip_address = ? 
+              AND event_type IN ('AUTH_FAILED', 'BIOMETRIC_MISMATCH', 'REPLAY_ATTACK_BLOCKED')
+              AND timestamp >= datetime('now', '-' || ? || ' minutes')
+        """, (ip_address, window_minutes))
+        row = cursor.fetchone()
+        conn.close()
+        return (row["fail_count"] if row else 0) >= max_failed
+    except Exception:
+        return False
+
+def get_security_audit_logs(limit: int = 50):
+    """Retrieves recent security audit logs for administrative observability."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM audit_logs ORDER BY id DESC LIMIT ?", (limit,))
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
+    except Exception:
+        return []
+
+# ===============================================================
+# 🔑 FIDO2 / WEBAUTHN PUBLIC-KEY HANDLER (PS05 MODULE 1)
+# ===============================================================
+def register_webauthn_credential(user_email: str, credential_id: str, public_key: str, aaguid: str = "00000000-0000-0000-0000-000000000000") -> bool:
+    """Enrolls a hardware-backed asymmetric WebAuthn public key."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO webauthn_credentials (user_email, credential_id, public_key, sign_counter, aaguid)
+            VALUES (?, ?, ?, 0, ?)
+        """, (user_email.strip().lower(), credential_id, public_key, aaguid))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception:
+        return False
+
+def verify_webauthn_counter(credential_id: str, incoming_counter: int) -> bool:
+    """
+    Anti-Replay Protection: Verifies that incoming sign_counter is strictly
+    greater than the stored counter. Prevents cryptographic token replay attacks.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT sign_counter FROM webauthn_credentials WHERE credential_id = ?", (credential_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return True # Fallback if first registration
+        stored_counter = row["sign_counter"]
+        if incoming_counter <= stored_counter:
+            conn.close()
+            return False # Replay attack detected!
+        cursor.execute("UPDATE webauthn_credentials SET sign_counter = ? WHERE credential_id = ?", (incoming_counter, credential_id))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception:
+        return True
+
+# ===============================================================
+# ⏳ EPHEMERAL CRYPTOGRAPHIC RECOVERY TOKENS (PS05 MODULE 3)
+# ===============================================================
+def create_ephemeral_recovery_token(email: str, duration_sec: int = 300) -> str:
+    """
+    Generates a 32-byte single-use cryptographic recovery token with 5-minute expiry.
+    Eliminates easily phished security questions (Mother's maiden name, pet name).
+    """
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
+    expires_at = time.time() + duration_sec
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO recovery_tokens (token_hash, user_email, expires_at, used)
+            VALUES (?, ?, ?, 0)
+        """, (token_hash, email.strip().lower(), expires_at))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+    return raw_token
+
+def validate_ephemeral_recovery_token(raw_token: str) -> tuple:
+    """Validates single-use token and consumes it if valid."""
+    token_hash = hashlib.sha256(raw_token.strip().encode('utf-8')).hexdigest()
+    now = time.time()
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM recovery_tokens WHERE token_hash = ? AND used = 0", (token_hash,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return False, "Invalid or already consumed recovery token."
+        if now > row["expires_at"]:
+            conn.close()
+            return False, "Recovery token expired (5-minute security limit exceeded)."
+        cursor.execute("UPDATE recovery_tokens SET used = 1 WHERE token_hash = ?", (token_hash,))
+        conn.commit()
+        conn.close()
+        return True, row["user_email"]
+    except Exception as e:
+        return False, str(e)

@@ -166,25 +166,43 @@ def analyze_face_spatial_guidance(image_bytes) -> dict:
                 M = cv2.moments(valid_face_contour)
                 if M["m00"] > 0:
                     cx = M["m10"] / M["m00"]
+                    cy = M["m01"] / M["m00"]
                 else:
                     x, y, w, h = cv2.boundingRect(valid_face_contour)
                     cx = x + w / 2
+                    cy = y + h / 2
                 x, y, w, h = cv2.boundingRect(valid_face_contour)
                 
-                # Spatial guidance relative to circle
-                if cx < width * 0.33:
+                # 1. Horizontal (X) centering check
+                if cx < width * 0.36:
                     return {
                         "status": "MOVE_RIGHT",
                         "guidance_en": "Move slightly to your right inside the circle.",
                         "is_ready": False
                     }
-                elif cx > width * 0.67:
+                elif cx > width * 0.64:
                     return {
                         "status": "MOVE_LEFT",
                         "guidance_en": "Move slightly to your left inside the circle.",
                         "is_ready": False
                     }
-                elif w < width * 0.20 or h < height * 0.20:
+                
+                # 2. Vertical (Y) centering check
+                if cy < height * 0.30:
+                    return {
+                        "status": "MOVE_DOWN",
+                        "guidance_en": "Move slightly down inside the circle.",
+                        "is_ready": False
+                    }
+                elif cy > height * 0.70:
+                    return {
+                        "status": "MOVE_UP",
+                        "guidance_en": "Move slightly up inside the circle.",
+                        "is_ready": False
+                    }
+
+                # 3. Scale check
+                if w < width * 0.20 or h < height * 0.20:
                     return {
                         "status": "MOVE_CLOSER",
                         "guidance_en": "Please move closer to the camera inside the circle.",
@@ -193,7 +211,7 @@ def analyze_face_spatial_guidance(image_bytes) -> dict:
 
             return {
                 "status": "CENTERED",
-                "guidance_en": "Face detected inside circle. Ready to authenticate.",
+                "guidance_en": "Face centered inside circle. Ready to authenticate.",
                 "is_ready": True
             }
         except Exception:
@@ -233,6 +251,27 @@ def analyze_face_spatial_guidance(image_bytes) -> dict:
                 "is_ready": False
             }
         
+        # Vertical fallback check
+        h_half = height // 2
+        top_half = arr_gray[:h_half, :]
+        bottom_half = arr_gray[h_half:, :]
+        var_top = float(np.var(top_half))
+        var_bottom = float(np.var(bottom_half))
+        v_total = var_top + var_bottom + 1e-5
+
+        if (var_top / v_total) > 0.72:
+            return {
+                "status": "MOVE_DOWN",
+                "guidance_en": "Move slightly down inside the circle.",
+                "is_ready": False
+            }
+        elif (var_bottom / v_total) > 0.72:
+            return {
+                "status": "MOVE_UP",
+                "guidance_en": "Move slightly up inside the circle.",
+                "is_ready": False
+            }
+
         center_ratio = var_center / (total_var / 3.0)
         if center_ratio < 0.70:
             return {
@@ -243,7 +282,7 @@ def analyze_face_spatial_guidance(image_bytes) -> dict:
 
         return {
             "status": "CENTERED",
-            "guidance_en": "Face detected inside circle. Ready to authenticate.",
+            "guidance_en": "Face centered inside circle. Ready to authenticate.",
             "is_ready": True
         }
 
@@ -258,17 +297,21 @@ def get_spatial_voice_text(status: str, lang: str = "English") -> str:
     """Localized voice guidance prompts for all 10 languages."""
     messages = {
         "English": {
-            "CENTERED": "Face detected inside circle. Ready to authenticate.",
+            "CENTERED": "Face centered inside circle. Ready to authenticate.",
             "MOVE_RIGHT": "Move slightly to your right inside the circle.",
             "MOVE_LEFT": "Move slightly to your left inside the circle.",
+            "MOVE_UP": "Move slightly up inside the circle.",
+            "MOVE_DOWN": "Move slightly down inside the circle.",
             "MOVE_CLOSER": "Please move closer to the camera inside the circle.",
             "TOO_DARK": "Low lighting. Please turn on screen flash.",
             "NO_FACE": "No face detected inside the circle. Please face the camera directly."
         },
         "Tamil": {
-            "CENTERED": "வட்டத்திற்குள் முகம் கண்டறியப்பட்டது. சரிபார்க்க தயார்.",
+            "CENTERED": "வட்டத்தின் மையத்தில் முகம் உள்ளது. சரிபார்க்க தயார்.",
             "MOVE_RIGHT": "சற்று வலதுபுறம் நகர்ந்து வட்டத்திற்குள் வரவும்.",
             "MOVE_LEFT": "சற்று இடதுபுறம் நகர்ந்து வட்டத்திற்குள் வரவும்.",
+            "MOVE_UP": "வட்டத்திற்குள் சற்று மேலே வரவும்.",
+            "MOVE_DOWN": "வட்டத்திற்குள் சற்று கீழே வரவும்.",
             "MOVE_CLOSER": "வட்டத்திற்குள் சற்று அருகில் வரவும்.",
             "TOO_DARK": "வெளிச்சம் குறைவாக உள்ளது. ஃபிளாஷ் ஆன் செய்யவும்.",
             "NO_FACE": "வட்டத்திற்குள் முகம் கண்டறியப்படவில்லை. தயவுசெய்து உங்கள் முகத்தை வட்டத்திற்குள் வைக்கவும்."
@@ -277,14 +320,18 @@ def get_spatial_voice_text(status: str, lang: str = "English") -> str:
             "CENTERED": "चेहरा केंद्र में है। प्रमाणीकरण के लिए तैयार।",
             "MOVE_RIGHT": "थोड़ा दाईं ओर जाएं।",
             "MOVE_LEFT": "थोड़ा बाईं ओर जाएं।",
+            "MOVE_UP": "थोड़ा ऊपर आएं।",
+            "MOVE_DOWN": "थोड़ा नीचे आएं।",
             "MOVE_CLOSER": "कृपया कैमरे के पास आएं।",
             "TOO_DARK": "कम रोशनी है। कृपया स्क्रीन फ्लैश चालू करें।",
             "NO_FACE": "चेहरा नहीं दिख रहा है। कैमरे के सामने आएं।"
         },
         "Telugu": {
-            "CENTERED": "ముఖం మధ్యలో ఉంది. ధృవీకరణకు సిద్ధంగా ఉంది.",
+            "CENTERED": "ముఖం కేంద్రంలో ఉంది. ధృవీకరణకు సిద్ధంగా ఉంది.",
             "MOVE_RIGHT": "కొద్దిగా కుడివైపుకు జరగండి.",
             "MOVE_LEFT": "కొద్దిగా ఎడమవైపుకు జరగండి.",
+            "MOVE_UP": "కొద్దిగా పైకి జరగండి.",
+            "MOVE_DOWN": "కొద్దిగా క్రిందికి జరగండి.",
             "MOVE_CLOSER": "దయచేసి కెమెరాకు దగ్గరగా రండి.",
             "TOO_DARK": "తక్కువ వెలుతురు ఉంది. ఫ్లాష్ ఆన్ చేయండి.",
             "NO_FACE": "ముఖం కనిపించడం లేదు. కెమెరా ముందు రండి."
@@ -293,6 +340,8 @@ def get_spatial_voice_text(status: str, lang: str = "English") -> str:
             "CENTERED": "ಮುಖ ಕೇಂದ್ರದಲ್ಲಿದೆ. ಪರಿಶೀಲನೆಗೆ ಸಿದ್ಧವಾಗಿದೆ.",
             "MOVE_RIGHT": "ಸ್ವಲ್ಪ ಬಲಕ್ಕೆ ಸರಿಸಿ.",
             "MOVE_LEFT": "ಸ್ವಲ್ಪ ಎಡಕ್ಕೆ ಸರಿಸಿ.",
+            "MOVE_UP": "ಸ್ವಲ್ಪ ಮೇಲೆ ಸರಿಸಿ.",
+            "MOVE_DOWN": "ಸ್ವಲ್ಪ ಕೆಳಗೆ ಸರಿಸಿ.",
             "MOVE_CLOSER": "ದಯವಿಟ್ಟು ಕ್ಯಾಮರಾಗೆ ಹತ್ತಿರ ಬನ್ನಿ.",
             "TOO_DARK": "ಕಡಿಮೆ ಬೆಳಕು. ಫ್ಲ್ಯಾಶ್ ಆನ್ ಮಾಡಿ.",
             "NO_FACE": "ಮುಖ ಕಾಣಿಸುತ್ತಿಲ್ಲ. ಕ್ಯಾಮೆರಾ ಎದುರು ಬನ್ನಿ."
@@ -301,6 +350,8 @@ def get_spatial_voice_text(status: str, lang: str = "English") -> str:
             "CENTERED": "മുഖം കേന്ദ്രത്തിലാണ്. പരിശോധിക്കാൻ തയ്യാറാണ്.",
             "MOVE_RIGHT": "അല്പം വലത്തോട്ട് നീങ്ങുക.",
             "MOVE_LEFT": "അല്പം ഇടത്തോട്ട് നീങ്ങുക.",
+            "MOVE_UP": "അല്പം മുകളിലേക്ക് നീങ്ങുക.",
+            "MOVE_DOWN": "അല്പം താഴേക്ക് നീങ്ങുക.",
             "MOVE_CLOSER": "ക്യാമറയിലേക്ക് അടുക്കുക.",
             "TOO_DARK": "വെളിച്ചക്കുറവ്. ഫ്ലാഷ് ഓൺ ചെയ്യുക.",
             "NO_FACE": "മുഖം കാണുന്നില്ല. ക്യാമറയ്ക്ക് നേരെ നിൽക്കുക."
@@ -309,6 +360,8 @@ def get_spatial_voice_text(status: str, lang: str = "English") -> str:
             "CENTERED": "মুখ কেন্দ্রে আছে। যাচাইয়ের জন্য প্রস্তুত।",
             "MOVE_RIGHT": "একটু ডানদিকে সরান।",
             "MOVE_LEFT": "একটু বাঁদিকে সরান।",
+            "MOVE_UP": "একটু ওপরে সরান।",
+            "MOVE_DOWN": "একটু নিচে সরান।",
             "MOVE_CLOSER": "ক্যামেরার কাছে আসুন।",
             "TOO_DARK": "কম আলো। ফ্ল্যাশ চালু করুন।",
             "NO_FACE": "মুখ দেখা যাচ্ছে না। ক্যামেরার সামনে আসুন।"
@@ -317,6 +370,8 @@ def get_spatial_voice_text(status: str, lang: str = "English") -> str:
             "CENTERED": "चेहरा मध्यभागी आहे. पडताळणीसाठी तयार.",
             "MOVE_RIGHT": "किंचित उजवीकडे सरका.",
             "MOVE_LEFT": "किंचित डावीकडे सरका.",
+            "MOVE_UP": "किंचित वर सरका.",
+            "MOVE_DOWN": "किंचित खाली सरका.",
             "MOVE_CLOSER": "कॅमेऱ्याजवळ या.",
             "TOO_DARK": "कमी प्रकाश आहे. फ्लॅश चालू करा.",
             "NO_FACE": "चेहरा दिसत नाही. कॅमेऱ्यासमोर या."
@@ -325,6 +380,8 @@ def get_spatial_voice_text(status: str, lang: str = "English") -> str:
             "CENTERED": "Rostro centrado. Listo para verificar.",
             "MOVE_RIGHT": "Muévase ligeramente a la derecha.",
             "MOVE_LEFT": "Muévase ligeramente a la izquierda.",
+            "MOVE_UP": "Muévase ligeramente hacia arriba.",
+            "MOVE_DOWN": "Muévase ligeramente hacia abajo.",
             "MOVE_CLOSER": "Acérquese a la cámara.",
             "TOO_DARK": "Poca luz. Encienda el flash de pantalla.",
             "NO_FACE": "No se detecta rostro. Mire a la cámara."
@@ -333,6 +390,8 @@ def get_spatial_voice_text(status: str, lang: str = "English") -> str:
             "CENTERED": "Visage centré. Prêt pour vérification.",
             "MOVE_RIGHT": "Déplacez-vous légèrement vers la droite.",
             "MOVE_LEFT": "Déplacez-vous légèrement vers la gauche.",
+            "MOVE_UP": "Déplacez-vous légèrement vers le haut.",
+            "MOVE_DOWN": "Déplacez-vous légèrement vers le bas.",
             "MOVE_CLOSER": "Rapprochez-vous de la caméra.",
             "TOO_DARK": "Faible luminosité. Activez le flash d'écran.",
             "NO_FACE": "Aucun visage détecté. Regardez la caméra."

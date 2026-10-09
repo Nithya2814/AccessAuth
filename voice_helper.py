@@ -33,7 +33,40 @@ def play_speech(text: str, language_name: str = "English"):
                     utterance.lang = "{lang_code}";
                     utterance.rate = 0.92;
                     utterance.pitch = 1.0;
-                    synth.speak(utterance);
+
+                    var hasSpoken = false;
+                    function assignVoiceAndSpeak() {{
+                        if (hasSpoken) return;
+                        hasSpoken = true;
+                        try {{
+                            var voices = synth.getVoices() || [];
+                            var targetCode = "{lang_code}".toLowerCase();
+                            var targetPrefix = targetCode.split("-")[0];
+                            
+                            var matched = voices.find(function(v) {{
+                                return v.lang && v.lang.toLowerCase() === targetCode;
+                            }});
+                            if (!matched) {{
+                                matched = voices.find(function(v) {{
+                                    return v.lang && v.lang.toLowerCase().startsWith(targetPrefix);
+                                }});
+                            }}
+                            if (matched) {{
+                                utterance.voice = matched;
+                            }}
+                            synth.speak(utterance);
+                        }} catch(err) {{
+                            synth.speak(utterance);
+                        }}
+                    }}
+
+                    var currentVoices = synth.getVoices() || [];
+                    if (currentVoices.length > 0) {{
+                        assignVoiceAndSpeak();
+                    }} else {{
+                        synth.onvoiceschanged = assignVoiceAndSpeak;
+                        setTimeout(assignVoiceAndSpeak, 120);
+                    }}
                 }}
             }} catch(e) {{
                 console.error("SpeechSynthesis error:", e);

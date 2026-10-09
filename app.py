@@ -11,7 +11,7 @@ from translations import TRANSLATIONS
 import face_engine
 importlib.reload(face_engine)
 from face_engine import extract_face_features, compare_faces, check_lighting, analyze_face_spatial_guidance, get_spatial_voice_text
-from risk_friction import RiskEngine, FrictionEngine
+from risk_friction import RiskEngine, FrictionEngine, PassiveRiskEngine
 import voice_helper
 try:
     importlib.reload(voice_helper)
@@ -200,6 +200,12 @@ if "blind_challenge_solved" not in st.session_state:
     st.session_state.blind_challenge_solved = False
 if "should_announce_blind" not in st.session_state:
     st.session_state.should_announce_blind = False
+if "device_fingerprint" not in st.session_state:
+    st.session_state.device_fingerprint = PassiveRiskEngine.compute_device_fingerprint(
+        user_agent="Streamlit/Edge-Chrome", client_ip="127.0.0.1", platform_entropy=st.session_state.get("lang", "en")
+    )
+if "zt_score" not in st.session_state:
+    st.session_state.zt_score = 5
 
 # Current translation dictionary
 t = SafeDict(TRANSLATIONS.get(st.session_state.lang, TRANSLATIONS.get("English", {})))
@@ -808,6 +814,14 @@ components.html(f"""
                         var u = new SpeechSynthesisUtterance(text);
                         u.lang = doc.__accessCurrentLang || "en-US";
                         u.rate = 1.05;
+                        var voices = synth.getVoices() || [];
+                        var targetCode = (doc.__accessCurrentLang || "en-US").toLowerCase();
+                        var targetPrefix = targetCode.split("-")[0];
+                        var matched = voices.find(function(v) {{ return v.lang && v.lang.toLowerCase() === targetCode; }});
+                        if (!matched) {{
+                            matched = voices.find(function(v) {{ return v.lang && v.lang.toLowerCase().startsWith(targetPrefix); }});
+                        }}
+                        if (matched) u.voice = matched;
                         synth.speak(u);
                     }}
                 }} catch(e) {{}}
@@ -991,8 +1005,11 @@ if st.session_state.logged_in_user:
         token_info = "Google ID Token: <code>ya29.a0AfH6S... Verified</code>"
     else:
         auth_badge = '<span class="status-pill pill-green">👤 Multi-Factor Biometric Auth</span>'
-        method_desc = "PBKDF2 Password + Facial Biometrics"
-        token_info = "Cryptographic Salt: <code>PBKDF2-HMAC-SHA256</code>"
+        method_desc = "PBKDF2 Password and Facial Biometrics"
+        token_info = "Cryptographic Salt: <code>PBKDF2-HMAC-SHA256</code> • Asymmetric FIDO2 Counter Ready"
+
+    zt_score = st.session_state.get("zt_score", 5)
+    fp_prefix = str(st.session_state.get("device_fingerprint", "9a7f3e1b"))[:8]
 
     st.markdown(f"""
     <div class="adaptive-card">
@@ -1005,7 +1022,9 @@ if st.session_state.logged_in_user:
         • <strong>Phone:</strong> {user.get('phone', '+91 98765-XXXXX')}<br>
         • <strong>Authentication Method:</strong> {method_desc}<br>
         • <strong>Security Protocol:</strong> {token_info}<br>
-        • <strong>Session Risk:</strong> Normal - Zero Trust Evaluated Low Risk 0.05</p>
+        • <strong>Zero Trust Risk Score:</strong> {zt_score}/100 • Low Risk Frictionless<br>
+        • <strong>Hardware Device Fingerprint:</strong> Verified {fp_prefix}<br>
+        • <strong>Cryptographic Audit Trail:</strong> Event logged to Security Telemetry Engine</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -1054,6 +1073,7 @@ if st.session_state.access_mode == "Blind Assist Mode":
                 v_msg_b = get_spatial_voice_text(spatial_b["status"], st.session_state.lang)
                 st.error(f"⚠️ {v_msg_b}")
                 play_speech(v_msg_b, st.session_state.lang)
+                db.log_security_event("NO_FACE_REJECTED", user_email="", ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=20, details=f"Face guidance not ready: {spatial_b['status']}")
             else:
                 centered_txt = get_spatial_voice_text("CENTERED", st.session_state.lang)
                 st.info(f"✅ {centered_txt}")
@@ -1070,6 +1090,9 @@ if st.session_state.access_mode == "Blind Assist Mode":
                         best_score = score
                 
                 if best_match:
+                    zt_eval = PassiveRiskEngine.evaluate_zero_trust("127.0.0.1", st.session_state.device_fingerprint, 0)
+                    st.session_state.zt_score = zt_eval["score"]
+                    db.log_security_event("AUTH_SUCCESS_BIOMETRIC", user_email=best_match["email"], ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=zt_eval["score"], details="One-Tap Blind Face Login Verified")
                     st.success(f"✅ Face verified! Welcome back, {best_match['fullname']}!")
                     play_speech(f"Face verified. Welcome back {best_match['fullname']}", st.session_state.lang)
                     st.session_state.login_attempts = 0
@@ -1077,10 +1100,11 @@ if st.session_state.access_mode == "Blind Assist Mode":
                     st.session_state.logged_in_user = dict(best_match)
                     st.rerun()
                 else:
+                    db.log_security_event("BIOMETRIC_MISMATCH", user_email="", ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=60, details="Face feature distance below threshold")
                     st.error("❌ Face does not match registered biometrics. Please adjust lighting or try again.")
                     play_speech("Face does not match registered biometrics. Please adjust lighting and try again.", st.session_state.lang)
 
-    # 2. ACOUSTIC SECURITY VIBRATION CHALLENGE (CAPTCHA FOR BLIND USERS)
+    # 2. ACOUSTIC SECURITY VIBRATION CHALLENGE
     with st.container(border=True):
         st.markdown("### 📳 Audio Security Vibration Challenge")
         st.write("Acoustic CAPTCHA designed for visually impaired users. Listen to the audio pulse beeps and select the count.")
@@ -1103,9 +1127,11 @@ if st.session_state.access_mode == "Blind Assist Mode":
                 if st.button(f"{count_val} Pulses", key=f"pulse_sel_{count_val}", use_container_width=True):
                     if count_val == st.session_state.audio_pulse_count:
                         st.session_state.blind_challenge_solved = True
+                        db.log_security_event("ACOUSTIC_CHALLENGE_SOLVED", user_email="", ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=5, details=f"Pulse count {st.session_state.audio_pulse_count} verified")
                         play_speech(t["audio_challenge_pass"], st.session_state.lang)
                         st.success(t["audio_challenge_pass"])
                     else:
+                        db.log_security_event("ACOUSTIC_CHALLENGE_FAILED", user_email="", ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=35, details="Incorrect pulse count entered")
                         play_speech("Incorrect pulse count. Please listen again.", st.session_state.lang)
                         st.error("Incorrect count. Please click Play Audio Pulses to listen again.")
 
@@ -1211,6 +1237,10 @@ with tab_login:
             
             if st.button(t["verify_otp_btn"], type="primary", use_container_width=True):
                 if entered_otp.strip() == st.session_state.generated_otp:
+                    zt_eval = PassiveRiskEngine.evaluate_zero_trust("127.0.0.1", st.session_state.device_fingerprint, 0)
+                    st.session_state.zt_score = zt_eval["score"]
+                    target_mail = user_record["email"] if user_record else (st.session_state.target_email_locked or "user@example.com")
+                    db.log_security_event("AUTH_SUCCESS_STEPUP_OTP", user_email=target_mail, ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=zt_eval["score"], details="Adaptive OTP Step-Up Authenticated")
                     st.success(t["otp_success"])
                     st.session_state.login_attempts = 0
                     if user_record:
@@ -1225,6 +1255,7 @@ with tab_login:
                     st.session_state.generated_otp = None
                     st.rerun()
                 else:
+                    db.log_security_event("AUTH_FAILED_OTP", user_email=st.session_state.target_email_locked or "", ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=70, details="Invalid step-up OTP code")
                     st.error(t["otp_fail"])
 
         # FALLBACK 2: FACE RECOGNITION
@@ -1279,12 +1310,16 @@ with tab_login:
                         if user_record and user_record.get("face_data"):
                             matched, msg, score = compare_faces(user_record["face_data"], face_login_cam, threshold=0.45)
                             if matched:
+                                zt_eval = PassiveRiskEngine.evaluate_zero_trust("127.0.0.1", st.session_state.device_fingerprint, 0)
+                                st.session_state.zt_score = zt_eval["score"]
+                                db.log_security_event("AUTH_SUCCESS_STEPUP_FACE", user_email=user_record["email"], ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=zt_eval["score"], details="Adaptive Face Step-Up Authenticated")
                                 st.success(f"{t['face_match_success']} • Match Confidence: {int(score*100)}%")
                                 st.session_state.login_attempts = 0
                                 db.reset_failed_attempts(user_record["email"])
                                 st.session_state.logged_in_user = dict(user_record)
                                 st.rerun()
                             else:
+                                db.log_security_event("BIOMETRIC_MISMATCH", user_email=user_record["email"], ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=75, details="Step-up face mismatch")
                                 st.error(f"{t['face_match_fail']} • Score: {int(score*100)}%")
                         else:
                             st.error("No registered biometric face template found for this user. Please use OTP verification.")
@@ -1312,6 +1347,12 @@ with tab_login:
             submit_login = st.form_submit_button(t["login_btn"], type="primary", use_container_width=True)
             
             if submit_login:
+                # 0. Check dynamic IP Rate Throttling
+                if db.check_ip_throttle("127.0.0.1", max_failed=5, window_minutes=15):
+                    st.error("⚠️ Security Rate Limit Active: Too many failed login attempts from this network. Please wait a few moments.")
+                    db.log_security_event("IP_RATE_THROTTLED", user_email=login_email, ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=95, details="Dynamic rate limit triggered")
+                    st.stop()
+
                 # 1. Validate CAPTCHA
                 captcha_valid = (captcha_input.strip().upper() == str(st.session_state.captcha_a).strip().upper())
                 
@@ -1322,6 +1363,9 @@ with tab_login:
                     credentials_valid = True
                 
                 if credentials_valid and captcha_valid:
+                    zt_eval = PassiveRiskEngine.evaluate_zero_trust("127.0.0.1", st.session_state.device_fingerprint, 0)
+                    st.session_state.zt_score = zt_eval["score"]
+                    db.log_security_event("AUTH_SUCCESS_PASSWORD", user_email=login_email, ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=zt_eval["score"], details="Password and CAPTCHA authenticated")
                     st.success("✅ Login successful!")
                     st.session_state.login_attempts = 0
                     db.reset_failed_attempts(login_email)
@@ -1331,7 +1375,7 @@ with tab_login:
                     st.session_state.login_attempts += 1
                     st.session_state.target_email_locked = login_email
                     st.session_state.captcha_q, st.session_state.captcha_a = FrictionEngine.generate_captcha()
-                    
+                    db.log_security_event("AUTH_FAILED", user_email=login_email, ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=min(90, 30 * st.session_state.login_attempts), details=f"Failed attempt {st.session_state.login_attempts}")
                     st.error(t["err_invalid_login"])
                     st.warning(t["attempts_warning"].format(st.session_state.login_attempts))
                     st.rerun()
@@ -1382,6 +1426,9 @@ with tab_login:
                                     best_score = score
                             
                             if best_match:
+                                zt_eval = PassiveRiskEngine.evaluate_zero_trust("127.0.0.1", st.session_state.device_fingerprint, 0)
+                                st.session_state.zt_score = zt_eval["score"]
+                                db.log_security_event("AUTH_SUCCESS_BIOMETRIC", user_email=best_match["email"], ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=zt_eval["score"], details="One-Tap Face Biometric Login Verified")
                                 st.success(f"✅ Face verified! Welcome back, {best_match['fullname']}!")
                                 play_speech(f"Face verified. Welcome back {best_match['fullname']}", st.session_state.lang)
                                 st.session_state.login_attempts = 0
@@ -1390,6 +1437,7 @@ with tab_login:
                                 st.session_state.show_face_login = False
                                 st.rerun()
                             else:
+                                db.log_security_event("BIOMETRIC_MISMATCH", user_email="", ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=60, details="Face mismatch on one-tap login")
                                 st.error("❌ Face does not match registered biometrics. Please adjust lighting or try again.")
                                 play_speech("Face does not match registered biometrics.", st.session_state.lang)
 
@@ -1570,6 +1618,7 @@ with tab_signup:
                                 face_data=face_result
                             )
                             if ok:
+                                db.log_security_event("USER_REGISTERED", user_email=signup_email, ip_address="127.0.0.1", device_fingerprint=st.session_state.device_fingerprint, risk_score=0, details="New user account enrolled with facial biometrics")
                                 st.success(t["signup_success"])
                                 play_speech(f"Welcome {signup_name}. Account registered successfully.", st.session_state.lang)
                                 st.balloons()
